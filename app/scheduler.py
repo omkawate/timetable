@@ -1,5 +1,6 @@
 """Constraint scheduling, real capacity checks, and explainable scoped generation."""
 import math
+import secrets
 import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
@@ -89,7 +90,7 @@ def preflight(config: Configuration):
     return problems
 
 
-def generate(config: Configuration, time_limit=20, target_group_ids=None, locked_entries=None):
+def generate(config: Configuration, time_limit=20, target_group_ids=None, locked_entries=None, random_seed=None):
     started = time.monotonic()
     all_groups = {g.id:g for g in config.groups}
     targets = set(target_group_ids if target_group_ids is not None else all_groups)
@@ -139,6 +140,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
             if not count:
                 continue
             choices = []
+            daily_choices = defaultdict(list)
             rooms = eligible_rooms(selected,item,kind)
             for day in range(len(days)):
                 for slot in range(len(periods)):
@@ -149,6 +151,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                     for room in rooms:
                         var = model.NewBoolVar(f'{item.id}_{kind}_{day}_{slot}_{room.id}')
                         choices.append(var)
+                        daily_choices[day].append(var)
                         entry = {'offering_id':item.id,'group_id':group.id,'subject_id':subject.id,'teacher_id':teacher.id,
                                  'room_id':room.id,'day':day,'slot':slot,'duration':duration,'kind':kind,'batch_id':item.batch_id}
                         candidates.append((var,entry))
@@ -159,6 +162,12 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                             if subject.elective:
                                 coverage['elective',(group.department_id,group.semester),day,slot+offset].append(var)
             model.Add(sum(choices) == count).OnlyEnforceIf(required)
+            if kind=='lecture' and settings.spread_lectures:
+                spread=assumption('spread_'+item.id,issue('LECTURE_SPREAD',
+                    f'{subject.code}, semester {group.semester} {group.division}: {count} lectures must be spread across working days.',
+                    'Provide teacher availability on more days, adjust locked sessions, or review lecture requirements.'))
+                for variables in daily_choices.values():
+                    model.Add(sum(variables)<=math.ceil(count/len(days))).OnlyEnforceIf(spread)
 
     for entry in locked:
         key = (entry['offering_id'],entry['kind'],entry['day'],entry['slot'],entry['room_id'])
@@ -210,7 +219,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.000001,time_limit-(time.monotonic()-started))
     solver.parameters.num_search_workers = 4
-    solver.parameters.random_seed = 42
+    solver.parameters.random_seed = random_seed if random_seed is not None else secrets.randbelow(2**30)
     result = solver.Solve(model)
     if result == cp_model.INFEASIBLE:
         diagnostic_model.ClearObjective()
@@ -237,6 +246,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                 'Reserved separate elective periods within each department and semester, including across divisions.',
                 'Respected teacher coming/leaving times, daily and weekly limits, and lab/project eligibility. Sessions never cross breaks.',
                 f'Preserved {len(locked)} sessions outside the selected divisions from the base timetable.' if locked else 'Created a fresh plan for the selected scope.',
+                'Spread each subject’s lectures across working days; subjects with up to one lecture per working day never repeat on the same day.' if settings.spread_lectures else 'Used the saved lecture-distribution policy.',
                 f'Limited the longest student day to {solver.Value(peak)} teaching periods.'
             ],'summary':{'sessions':len(entries),'teaching_hours':hours,'divisions':len(selected.groups),
                           'teachers':len({e['teacher_id'] for e in entries}),'max_daily_hours':solver.Value(peak)*settings.period_minutes/60,

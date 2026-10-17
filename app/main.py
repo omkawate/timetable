@@ -21,6 +21,7 @@ from .exchange import configuration_csv_v2, configuration_excel, parse_upload
 from .analytics import analyze
 from .demo import presentation_config
 from .calendar import Settings
+from .editing import edit_result
 
 ROOT = Path(__file__).resolve().parent.parent
 generation_lock = Lock()
@@ -141,10 +142,10 @@ def generate_timetable(payload: GenerateRequest):
         base = None
         if payload.base_generation_id:
             base = storage.get_generation(payload.base_generation_id)
-            if not base or base['result']['status'] != 'feasible' or base['config_revision'] != current['revision']:
+            if not base or base['result']['status'] != 'feasible' or base['config_revision'] != current['revision'] or base['config']['settings']!=config.settings.model_dump():
                 raise HTTPException(409,'The base timetable must be successful and use the current academic data. Generate a fresh complete plan after editing data.')
         elif payload.continue_latest:
-            match = next((r for r in storage.generations() if r['status']=='feasible' and r['config_revision']==current['revision']),None)
+            match = next((r for r in storage.generations() if r['status']=='feasible' and r['config_revision']==current['revision'] and bool(r['spread_lectures'])==config.settings.spread_lectures),None)
             if match:
                 base = storage.get_generation(match['id'])
         result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [])
@@ -160,6 +161,62 @@ def generation_detail(identifier: int):
     if result is None:
         raise HTTPException(404, 'Timetable not found.')
     return result
+
+class WorkflowUpdate(BaseModel):
+    revision: int = Field(ge=0)
+    action: Literal['draft','approve','lock','unlock']
+
+
+class PlacementChange(BaseModel):
+    entry_index: int = Field(ge=0, strict=True)
+    day: int = Field(ge=0, le=6, strict=True)
+    slot: int = Field(ge=0, le=15, strict=True)
+    room_id: str = Field(min_length=1,max_length=80)
+
+
+class ManualEdit(BaseModel):
+    revision: int = Field(ge=0)
+    changes: list[PlacementChange] = Field(min_length=1,max_length=1200)
+
+
+@app.patch('/api/generations/{identifier}/workflow')
+def update_workflow(identifier: int, payload: WorkflowUpdate):
+    record=generation_detail(identifier)
+    if record['result']['status']!='feasible':
+        raise HTTPException(409,'Only successful timetables have draft, approval, and lock controls.')
+    if payload.action=='approve':
+        audit=analyze(record)
+        if audit['hard_conflicts']:
+            raise HTTPException(422,'Approval blocked: '+'; '.join(audit['violations']))
+    try:
+        storage.change_workflow(identifier,payload.revision,payload.action)
+    except storage.RevisionConflict as exc:
+        raise HTTPException(409,str(exc)) from exc
+    return generation_detail(identifier)
+
+
+@app.post('/api/generations/{identifier}/edits')
+def manually_edit(identifier: int, payload: ManualEdit):
+    record=generation_detail(identifier)
+    if record['result']['status']!='feasible':
+        raise HTTPException(409,'Only successful timetables can be edited.')
+    workflow=record['workflow']
+    if workflow['locked'] or workflow['state']!='draft':
+        raise HTTPException(409,'Unlock the timetable and mark it Draft before editing.')
+    if workflow['revision']!=payload.revision:
+        raise HTTPException(409,'Timetable controls changed in another window. Reload before saving.')
+    try:
+        result,violations=edit_result(record,payload.changes)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+    if violations:
+        raise HTTPException(422,'Edit not saved. Fix these conflicts or swap the affected sessions together: '+ '\n• '.join(violations))
+    try:
+        new_id=storage.save_manual_version(record,payload.revision,(record['name'][:57]+' · Manual draft'),result)
+    except storage.RevisionConflict as exc:
+        raise HTTPException(409,str(exc)) from exc
+    return generation_detail(new_id)
+
 
 @app.get('/api/generations/{identifier}/analytics')
 def generation_analytics(identifier: int):
@@ -187,11 +244,16 @@ def demo_data(format: Literal['json','csv','xlsx']):
 def performance():
     rows = storage.generations()
     durations=[]
+    solver_rows=[]
     for row in rows:
         record = storage.get_generation(row['id'])
+        if record['result'].get('source')=='manual':
+            continue
+        solver_rows.append(row)
         row['duration'] = record['result'].get('elapsed_seconds',0)
         row['sessions'] = len(record['result']['entries'])
         durations.append(row['duration'])
+    rows=solver_rows
     latency = sorted(request_times)
     peak_mb = None
     try:
@@ -217,15 +279,15 @@ def performance():
             'request_samples':len(latency),'average_generation_seconds':round(sum(durations)/len(durations),3) if durations else None,
             'success_rate':round(100*sum(r['status']=='feasible' for r in rows)/len(rows),1) if rows else None,
             'fastest_seconds':min(durations) if durations else None,'slowest_seconds':max(durations) if durations else None,
-            'runs':rows,'measurement_note':'API latency covers the latest 500 completed requests in this process. Generation metrics cover the latest 100 saved runs, including failed and timed-out searches. Memory is peak resident process memory when available.'}
+            'runs':rows,'measurement_note':'API latency covers the latest 500 completed requests in this process. Generation metrics cover solver runs among the latest 100 saved versions, including failed and timed-out searches; manual edits are excluded. Memory is peak resident process memory when available.'}
 
 @app.get('/api/generations/{identifier}/export/{format}')
-def export_generation(identifier: int, format: Literal['pdf','xlsx'], view: Literal['group','teacher']='group', target: str | None = Query(default=None, max_length=80)):
+def export_generation(identifier: int, format: Literal['pdf','xlsx'], view: Literal['group','teacher']='group', target: str | None = Query(default=None, max_length=80), batch: str | None = Query(default=None,max_length=80)):
     record = generation_detail(identifier)
     if record['result']['status'] != 'feasible':
         raise HTTPException(409, 'Only a successfully generated timetable can be exported.')
     try:
-        body = pdf(record, view, target) if format == 'pdf' else excel(record, view, target)
+        body = pdf(record, view, target,batch) if format == 'pdf' else excel(record, view, target,batch)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     mime = 'application/pdf' if format == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

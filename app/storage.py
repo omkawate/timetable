@@ -34,6 +34,12 @@ def initialize():
             config_revision INTEGER NOT NULL, config TEXT NOT NULL,
             result TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS generation_workflow (
+            generation_id INTEGER PRIMARY KEY REFERENCES generations(id),
+            state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','approved')),
+            locked INTEGER NOT NULL DEFAULT 0 CHECK(locked IN (0,1)),
+            revision INTEGER NOT NULL DEFAULT 0
+        );
         ''')
 
 def get_config():
@@ -70,16 +76,66 @@ def get_generation(identifier):
     from .domain import Configuration, COLLEGE
     with connect() as db:
         row = db.execute('SELECT * FROM generations WHERE id=?', (identifier,)).fetchone()
+        workflow = _workflow(db,identifier)
     if not row:
         return None
-    config = Configuration(**json.loads(row['config']))
+    snapshot=json.loads(row['config'])
+    snapshot.setdefault('settings',{}).setdefault('spread_lectures',False)
+    config = Configuration(**snapshot)
     return {**dict(row), 'config': config.model_dump(), 'result': json.loads(row['result']),
-            'meta': {'college':COLLEGE, **config.settings.meta()}}
+            'workflow':workflow, 'meta': {'college':COLLEGE, **config.settings.meta()}}
 
 def generations():
     with connect() as db:
         rows = db.execute('''SELECT id,name,created_at,config_revision,
             json_extract(result,'$.status') AS status,
-            json_extract(result,'$.summary.teaching_hours') AS teaching_hours
+            json_extract(result,'$.summary.teaching_hours') AS teaching_hours,
+            COALESCE(json_extract(config,'$.settings.spread_lectures'),0) AS spread_lectures
             FROM generations ORDER BY id DESC LIMIT 100''').fetchall()
-    return [dict(row) for row in rows]
+        output=[{**dict(row),'workflow':_workflow(db,row['id'])} for row in rows]
+    return output
+
+
+def _workflow(db, identifier):
+    row = db.execute('SELECT state,locked,revision FROM generation_workflow WHERE generation_id=?',(identifier,)).fetchone()
+    return {'state':row['state'],'locked':bool(row['locked']),'revision':row['revision']} if row else {'state':'draft','locked':False,'revision':0}
+
+
+def _write_workflow(db, identifier, workflow):
+    db.execute('''INSERT INTO generation_workflow(generation_id,state,locked,revision) VALUES(?,?,?,?)
+        ON CONFLICT(generation_id) DO UPDATE SET state=excluded.state,locked=excluded.locked,revision=excluded.revision''',
+        (identifier,workflow['state'],int(workflow['locked']),workflow['revision']))
+
+
+def change_workflow(identifier, expected_revision, action):
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if not db.execute('SELECT id FROM generations WHERE id=?',(identifier,)).fetchone():
+            raise RevisionConflict('This timetable no longer exists.')
+        workflow=_workflow(db,identifier)
+        if workflow['revision'] != expected_revision:
+            raise RevisionConflict('Timetable controls changed in another window. Reload before continuing.')
+        if workflow['locked'] and action != 'unlock':
+            raise RevisionConflict('Unlock this timetable before changing its status.')
+        if action in ('draft','approve'):
+            workflow['state']='approved' if action=='approve' else 'draft'
+        else:
+            workflow['locked']=action=='lock'
+        workflow['revision']+=1
+        _write_workflow(db,identifier,workflow)
+
+
+def save_manual_version(source, expected_revision, name, result):
+    """Validate workflow and create the immutable edited snapshot in one transaction."""
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        workflow=_workflow(db,source['id'])
+        if workflow['revision'] != expected_revision:
+            raise RevisionConflict('This timetable changed in another window. Reload before saving your edit.')
+        if workflow['locked'] or workflow['state']!='draft':
+            raise RevisionConflict('Manual editing requires an unlocked Draft timetable.')
+        cursor=db.execute('INSERT INTO generations(name,config_revision,config,result) VALUES(?,?,?,?)',
+                          (name,source['config_revision'],json.dumps(source['config']),json.dumps(result)))
+        workflow['revision']+=1
+        _write_workflow(db,source['id'],workflow)
+        return cursor.lastrowid

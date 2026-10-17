@@ -40,7 +40,7 @@ def test_new_install_and_backups(client):
     current=client.get('/api/config').json()
     c=Configuration(**current['configuration'])
     assert current['revision']==1
-    assert (len(c.subjects),len(c.teachers),len(c.groups),len(c.rooms),len(c.offerings))==(24,24,9,9,72)
+    assert (len(c.subjects),len(c.teachers),len(c.groups),len(c.rooms),len(c.offerings))==(24,33,9,13,153)
     assert c.settings.start=='09:00'
     for suffix in ('json','xlsx','csv'):
         response=client.get('/api/config.'+suffix)
@@ -55,20 +55,28 @@ def test_new_install_and_backups(client):
 
 def test_full_demo_has_longer_days_and_real_contention(demo_record):
     r=demo_record['result'];a=analyze(demo_record)
-    assert r['summary']['sessions']==261
-    assert r['summary']['teaching_hours']==288
+    assert r['summary']['sessions']==315
+    assert r['summary']['teaching_hours']==396
     assert a['hard_conflicts']==0,a['violations']
     assert a['internal_gaps']==0
-    assert a['active_student_days']==45
+    assert a['active_student_days']==135
+    counts=Counter((e['offering_id'],e['day']) for e in r['entries'] if e['kind']=='lecture')
+    assert max(counts.values())==1
+    assert len(demo_record['config']['batches'])==27
     assert all(d['start']=='09:00' for d in a['student_days'])
     assert sum(d['end'] in ('15:45','16:45') for d in a['student_days'])>=30
-    assert sum(d['periods'] for d in a['student_days'])==288
-    assert a['room_utilization']==80  # 288 occupied periods / (9 rooms * 40 periods)
-    assert len(a['rooms'])==9
+    assert sum(d['periods'] for d in a['student_days'])==864
+    assert a['room_utilization']==76.2  # 396 contact periods / (13 rooms * 40 periods)
+    assert len(a['rooms'])==13
     assert all(r['utilization']<=100 for r in a['rooms'])
     book=load_workbook(io.BytesIO(excel(demo_record)))
     assert len(book.worksheets)==9
-    assert len(PdfReader(io.BytesIO(pdf(demo_record))).pages)==9
+    batch_book=load_workbook(io.BytesIO(excel(demo_record,'group','it3A','it3A1')))
+    assert 'Batch A1' in batch_book.active['A2'].value
+    all_text=' '.join(str(cell.value) for row in batch_book.active for cell in row)
+    assert 'A2' not in all_text and 'A3' not in all_text
+    assert '32 scheduled teaching hours' in batch_book.active['A3'].value
+    assert len(PdfReader(io.BytesIO(pdf(demo_record))).pages)>=9
 
 
 def test_scoped_generation_keeps_other_divisions_and_checks_stale_base(client):
@@ -123,6 +131,7 @@ def test_batches_projects_calendar_and_exports():
     for i in (1,2):
         data['offerings'].append({'id':f'batch{i}','group_id':'g','subject_id':'s','teacher_id':'t' if i==1 else 't2',
                                  'batch_id':f'b{i}','lectures':0,'labs':1,'projects':1,'lab_room_id':'l'})
+    data['settings']['spread_lectures']=False  # This separate calendar/project fixture tests legacy distribution.
     # Whole-division lectures use 80 seats; 30-seat laboratory fits only the practical batches.
     data['rooms'][1]['capacity']=30
     assert generate(Configuration(**data),10)['status']=='infeasible'
@@ -165,7 +174,7 @@ def test_csv_preserves_custom_department_room_and_cross_department_teacher():
     assert parsed.rooms==c.rooms
     assert parsed.departments==c.departments
     assert parsed.teachers[0].department_id=='math_department'
-    assert len(parsed.offerings)==72 and preflight(parsed)==[]
+    assert len(parsed.offerings)==153 and preflight(parsed)==[]
     assert parsed.elective_sets[0].code==c.elective_sets[0].code
 
 

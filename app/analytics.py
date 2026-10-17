@@ -1,5 +1,6 @@
 """Measured timetable analytics and an independent constraint audit."""
 from collections import defaultdict, Counter
+import math
 from .domain import Configuration, minutes
 from .resources import affected_units, eligible_rooms, student_units, session_specs
 
@@ -47,6 +48,11 @@ def analyze(record):
     for (resource,identifier,day,slot),items in occupancy.items():
         if len(items)>1:
             violations.append(f'{resource} {identifier}: {settings.days[day]}, period {slot+1} has {len(items)} overlapping sessions.')
+    if settings.spread_lectures:
+        lectures=Counter((e['offering_id'],e['day']) for e in entries if e['kind']=='lecture')
+        for (offering_id,day),count in lectures.items():
+            if count>math.ceil(m['offerings'][offering_id].lectures/len(settings.days)):
+                violations.append(f'{m["subjects"][m["offerings"][offering_id].subject_id].code}: too many lectures on {settings.days[day]}; spread them across different days.')
     scheduled = {e['group_id'] for e in entries}
     for o in config.offerings:
         if o.group_id in scheduled:
@@ -70,6 +76,9 @@ def analyze(record):
             for day in range(len(settings.days)):
                 used=slots['student',unit,day]
                 if not used:
+                    load=sum(count*duration for o in config.offerings if unit in affected_units(config,o) for kind,count,duration in session_specs(config,o))
+                    if load>=len(settings.days) and settings.available(day):
+                        violations.append(f'Division {group.division}, {settings.days[day]}: required teaching day is empty.')
                     continue
                 if min(used) != settings.available(day)[0]:
                     violations.append(f'Division {group.division}, {settings.days[day]}: starts after the first available period.')

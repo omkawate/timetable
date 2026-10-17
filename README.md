@@ -84,6 +84,26 @@ By default, generation preserves sessions outside your selected divisions from t
 
 Preserving earlier choices can make a later division impossible even when a completely new joint plan would work. In that case, select all affected divisions and generate them together. Uncheck **Preserve other divisions** to start an independent plan; it does not claim coordination with other saved versions. Changing academic data starts a new revision, so incompatible historical schedules are never silently used as a base.
 
+## Manual timetable editing and approval
+
+Every successful generation starts as an unlocked **Draft**. In Timetables:
+
+- **Edit timetable manually** opens the current division/professor's sessions. **Edit entire plan** opens all scheduled divisions, for coordinated moves across divisions.
+- Change day, starting period, or eligible room. To swap lectures, exchange placements in both rows before saving. A two-period laboratory moves as one whole session.
+- **Validate & save new Draft** checks every affected and unaffected session together. Faculty/room/student collisions, daily and weekly caps, elective separation, lecture spread, missing teaching days, student gaps, room eligibility, and breaks remain enforced. An invalid edit stays in the form with an explanation and does not create a version.
+- A valid edit creates a **new Draft version**, preserving original timetable content. Manual versions are independently audited; they do not claim solver-optimal balancing or count as solver performance runs.
+- **Approve timetable** audits the plan again and marks that version Approved. Approved timetables are read-only until **Mark Draft** is chosen.
+- **Lock timetable** prevents editing and status changes for that saved version. **Unlock timetable** restores its previous draft/approved status. A lock is for the whole saved version; it is not a per-lecture pin. Generating another plan creates another draft and never modifies the locked snapshot.
+- Status appears in Version history and PDF/Excel exports. Stale browser windows cannot overwrite newer workflow choices.
+
+Approval is a local coordinator workflow marker, not authenticated HOD authorization. Historical snapshots have Draft/unlocked defaults until their status is explicitly changed. Partial plans can be approved; the timetable scope still clearly lists remaining divisions.
+
+## Practical batches
+
+The updated IT demo supplies **three batches for every division**: A1/A2/A3, B1/B2/B3, and C1/C2/C3 in each of semesters 3, 5, and 7. Each practical assignment specifies its batch, teacher, and lab. Parallel lab sessions appear together with their batch labels. Full-division batch PDFs use A3 landscape; individual-batch PDFs use A4. Use **Practical batch** in the timetable toolbar to view or export one batch alongside its whole-division lectures.
+
+For a new division, Academic setup → Divisions offers **Create A1 / A2 / A3** (or the division's matching labels), splitting student strength evenly. Add separate lab assignments with a teacher and eligible room for each batch. **Add batch** supports additional custom batches; the total batch headcount cannot exceed the division's strength. Merely creating batch names does not invent teaching requirements.
+
 ## Presentation dataset
 
 The folder `sample_data` includes the same complete IT dataset in three formats:
@@ -92,9 +112,11 @@ The folder `sample_data` includes the same complete IT dataset in three formats:
 - [`it_presentation.xlsx`](sample_data/it_presentation.xlsx): separate worksheets for academic entities and settings.
 - [`it_presentation.json`](sample_data/it_presentation.json): full backup with stable identifiers.
 
-It contains **24 illustrative subjects, 24 teachers, 9 divisions, and 72 assignments**. The resources are **7 shared classrooms and 2 shared laboratories**, fewer classrooms than divisions. Each division needs **26 lecture hours + three 2-hour labs = 32 hours/week**. Teacher limits are 20 hours/week and 5 teaching periods/day. Room capacity is 70; each division has 60 students.
+It contains **24 illustrative subjects, 33 teachers, 9 divisions, 27 practical batches, and 153 assignments**. The resources are **7 shared classrooms and 6 shared laboratories**, fewer classrooms than divisions. Each division has A1/A2/A3-style batches of 20 students, each explicitly assigned a laboratory and practical teacher for every lab subject. Each student attends **26 lecture hours + three 2-hour labs = 32 hours/week**. Faculty limits are 20 hours/week, with five daily periods for theory faculty and six for practical faculty. Classrooms have 70 seats; laboratories have 20 seats. Each division has 60 students.
 
-The calendar starts at **09:00**, with recess **13:00–13:45**, and permits teaching until **17:45**. The verified complete solution has **261 sessions / 288 teaching hours**, no internal student gaps, no audited conflicts, and a maximum of seven teaching periods per student day. Most days finish at 15:45–16:45; a shorter day is possible. The solver determines exact placements. Room-period utilization is **80%** across the nine rooms (288 / 360).
+The former two labs offered only 80 room-periods/week, insufficient for 162 batch practical periods. Six shared labs let two divisions run their three practical batches concurrently, while seven classrooms serve the other divisions. No resource restriction is silently relaxed.
+
+The calendar starts at **09:00**, with recess **13:00–13:45**, and permits teaching until **17:45**. The verified complete solution has **315 sessions / 396 faculty contact hours**, no internal student gaps, no audited conflicts, and a maximum of seven teaching periods per student day. Most days finish at 15:45–16:45; a shorter day is possible. The solver determines exact placements. Room-period utilization is **76.2%** across the thirteen rooms (396 / 520).
 
 This is presentation data, **not an official DMCE curriculum or faculty directory**. No filler sessions are invented. The original 22-hour/week dataset remains at [`unisched_semesters_3_5_7.csv`](sample_data/unisched_semesters_3_5_7.csv), and its 171-session / 198-hour generation remains regression-tested.
 
@@ -113,6 +135,7 @@ The solver uses **Google OR-Tools CP-SAT**. Mandatory session choices and resour
 | Sessions | Exact lecture, lab, and project counts. Multi-period sessions stay consecutive in real time and never cross breaks, blocks, or the end of the day. |
 | Batches | Whole-division teaching occupies every batch. Separate batches can attend different practical sessions simultaneously when faculty and rooms permit. Unassigned remaining students form an additional student unit. |
 | Electives | Separate slots across the same department and semester, including its divisions. Elective sets organize related courses; they do **not** make alternatives run simultaneously. |
+| Lecture distribution | Enabled by default: each subject with 3–4 weekly lectures uses different days. The daily limit is ceil(weekly lectures / working days). A fresh solver seed varies placements while keeping all constraints; this is not an unconstrained random shuffle. Existing snapshots keep their original policy. |
 | Balance | Minimize the largest student daily teaching load; report whether optimality was proven. No requirements are silently relaxed. |
 
 Preflight checks explain excess workload, insufficient room capacity/eligibility, missing assignments, unavailable lab windows, and other obvious problems. CP-SAT checks the combination. When proven infeasible, a diagnostic search identifies a sufficient conflicting set where possible; it need not be minimal. Suggestions are **not applied automatically**. A search timeout is reported as **Search limit**, never proof of impossibility.
@@ -146,12 +169,14 @@ app/
   analytics.py    Independent saved-timetable audit and measured statistics
   exchange.py     CSV, Excel, JSON import and backup
   demo.py         Reproducible IT presentation data
-  storage.py      SQLite revisions and immutable snapshots
+  storage.py      SQLite revisions, immutable snapshots, workflow states
+  editing.py      Manual placement validation and draft version creation
   exports.py      College-branded PDF and Excel timetables
 static/
   index.html      Original website shell with additional navigation
   app.js          Shared UI, API helpers, dialogs, original workspace
   workspace.js    Department, scoped generation, management and analysis screens
+  editing.js      Manual editor, Draft / Approved / Lock controls
   style.css       Responsive purple design
 sample_data/      Original CSV plus IT presentation CSV/Excel/JSON
 tests/            API, scheduler, upgrade, export and browser regressions
@@ -177,7 +202,7 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe`. Browser 
 
 ## Further additions
 
-Useful next steps are coordinator/faculty login and publication approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator; there is no external AI service or automatic email messaging. Authentication and HTTPS would be needed before public deployment.
+Useful next steps are coordinator/faculty login with role-based approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator; there is no external AI service or automatic email messaging. Authentication and HTTPS would be needed before public deployment.
 
 ## Reusable cloud workflow
 
