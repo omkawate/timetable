@@ -6,17 +6,54 @@ UniSched includes a responsive website, a FastAPI backend, a SQLite database, a 
 
 ## Run the project
 
-Requires **Python 3.12** (tested), with `venv` and `pip`. From this folder:
+Requires **64-bit Python 3.11 or 3.12**, with `venv` and `pip`.
+
+### Windows
+
+Extract the ZIP, open the folder containing `run.py`, and double-click **`start_windows.bat`**. It selects an installed Python 3.12 or 3.11, creates or checks `.venv`, installs dependencies, and starts the server. Keep the window open while using UniSched.
+
+Alternatively, run these commands in **Command Prompt** from that folder:
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe --version
+.venv\Scripts\python.exe -m pip install --upgrade pip
+.venv\Scripts\python.exe -m pip install -r requirements.lock
+.venv\Scripts\python.exe run.py
+```
+
+If Python 3.12 is not installed, use `py -3.11 -m venv .venv` for the first command. Check that the second command reports Python 3.11 or 3.12. An existing supported `.venv` can be reused. Windows uses `.venv\Scripts\python.exe`; `.venv/bin/python` is the macOS/Linux path.
+
+### macOS / Linux
+
+From the project folder, with Python 3.11 or 3.12 selected:
 
 ```bash
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python run.py
 ```
 
-The website is served at `http://127.0.0.1:8000`. The API documentation is at `/docs`, and `/api/health` checks the server and database. Use `.venv/bin/python run.py --reload` while developing. On Windows, use `py -3.12 -m venv .venv` and `.venv\Scripts\python.exe` in place of `.venv/bin/python`.
+The website is served at `http://127.0.0.1:8000`. The API documentation is at `/docs`, and `/api/health` checks the server and database. Add `--reload` to the `run.py` command while developing. On subsequent launches, you can run only the final `run.py` command.
 
 The first launch initializes `data/unisched.db` and imports the included sample dataset. Later launches reuse existing data. No separate database server, credentials, Node.js, or frontend build is needed. Set `UNISCHED_DB` to use a different SQLite database path.
+
+### Fix an older Windows download
+
+If installation reports `No matching distribution found for numpy==2.5.4`, use the updated `requirements.lock` from this repository. The older file pinned NumPy/Pandas versions that required Python 3.12. The corrected file supports both Python 3.11 and 3.12 and includes Windows dependencies.
+
+You can update only that file from your existing project folder without replacing saved data:
+
+```bat
+curl.exe -fL https://raw.githubusercontent.com/omkawate/timetable/main/requirements.lock -o requirements.lock
+.venv\Scripts\python.exe --version
+.venv\Scripts\python.exe -m pip install --upgrade pip
+.venv\Scripts\python.exe -m pip install -r requirements.lock
+.venv\Scripts\python.exe run.py
+```
+
+If the file download fails, use **Code → Download ZIP** on GitHub and copy `requirements.lock` from the new ZIP into your existing project folder. Keep your `data` folder.
 
 ## Use the website
 
@@ -100,6 +137,7 @@ tests/
   browser_smoke.py   Real Chromium desktop/mobile user workflows
 data/               SQLite database, created automatically and gitignored
 run.py
+start_windows.bat    Windows setup and startup helper
 requirements.txt    Direct runtime dependencies
 requirements.lock   Tested runtime dependencies with exact versions
 ```
