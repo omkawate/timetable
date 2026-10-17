@@ -1,13 +1,28 @@
 # Included academic data
 
-`unisched_semesters_3_5_7.csv` is the single import file for Second, Third, and Final Year (semesters 3, 5, and 7), each with divisions A/B/C.
+## IT presentation dataset (new default)
 
-- 18 illustrative teachers, available 09:00–17:45, with an 18-hour weekly teaching limit.
-- 18 subjects: four core subjects and two electives per semester.
-- 9 lecture classrooms and 6 laboratories.
-- 54 teaching assignments; each division has 16 one-hour lectures and three two-hour lab sessions, totaling 22 teaching hours/week.
-- All teachers and subject codes are illustrative. This is not an official faculty list or prescribed university curriculum.
+`it_presentation.csv`, `.xlsx`, and `.json` contain the same complete illustrative curriculum for Second, Third, and Final Year (semesters 3, 5, and 7), each with divisions A/B/C.
 
-Download the file from **Import data → Download sample CSV** or select this file directly. Preview the summary, then choose **Replace academic data**. You can edit all parameters afterwards in **Academic setup**.
+- 24 teachers, available 09:00–17:45, with 20-hour weekly and five-period daily limits.
+- 24 subjects, eight per semester, including two separately scheduled electives per semester.
+- Only seven shared classrooms and two shared laboratories for nine divisions; 70 seats per room, 60 students per division. Auto allocation avoids dedicated classroom requirements.
+- 72 assignments: 26 one-hour lectures plus three two-hour practicals per division, totaling 32 teaching hours/week.
+- 261 sessions / 288 teaching hours across all divisions. Most days finish at 15:45–16:45, with a possible shorter day; the exact grid is computed by the solver.
+- Recess 13:00–13:45; five working days; the college day can extend to 17:45.
 
-Use identical teacher details whenever the same teacher appears in more than one row. All lectures and labs assigned to a teacher count toward that teacher’s weekly maximum, across every division and year.
+Open **Import data → Preview IT reference data → Replace academic data**, or choose one of these files directly. A new empty database seeds this dataset automatically. Existing databases retain their data until an explicit import.
+
+Use Excel/JSON for full backups. The extended CSV has one row per assignment; its first row carries room pools, department metadata, and calendar JSON. Keep those cells when editing. CSV imports rebuild assignment/subject/division IDs and do not preserve unassigned records.
+
+## Original lighter dataset
+
+`unisched_semesters_3_5_7.csv` remains supported:
+
+- 18 teachers and 18 subjects; weekly teacher limit 18 hours.
+- Nine dedicated classrooms and six laboratories.
+- 54 assignments, 22 hours/week per division, 171 sessions / 198 teaching hours overall.
+
+Find it through **Import data → Original sample CSV**.
+
+All names and curricula are illustrative, not an official DMCE faculty list or prescribed syllabus. Repeat teacher details consistently; loads apply across divisions and departments. No filler subjects are inserted by the solver.

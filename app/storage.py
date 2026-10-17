@@ -37,11 +37,13 @@ def initialize():
         ''')
 
 def get_config():
+    from .domain import Configuration
     with connect() as db:
         row = db.execute('SELECT * FROM configuration WHERE id=1').fetchone()
     if not row:
-        return {'revision': 0, 'configuration': {'teachers': [], 'subjects': [], 'rooms': [], 'groups': [], 'offerings': []}}
-    return {'revision': row['revision'], 'configuration': json.loads(row['body'])}
+        return {'revision': 0, 'configuration': Configuration().model_dump()}
+    # Add schema defaults in memory; never rewrite a user's old configuration on read.
+    return {'revision': row['revision'], 'configuration': Configuration(**json.loads(row['body'])).model_dump()}
 
 class RevisionConflict(Exception):
     pass
@@ -65,11 +67,14 @@ def save_generation(name, revision, config, result):
         return cursor.lastrowid
 
 def get_generation(identifier):
+    from .domain import Configuration, COLLEGE
     with connect() as db:
         row = db.execute('SELECT * FROM generations WHERE id=?', (identifier,)).fetchone()
     if not row:
         return None
-    return {**dict(row), 'config': json.loads(row['config']), 'result': json.loads(row['result'])}
+    config = Configuration(**json.loads(row['config']))
+    return {**dict(row), 'config': config.model_dump(), 'result': json.loads(row['result']),
+            'meta': {'college':COLLEGE, **config.settings.meta()}}
 
 def generations():
     with connect() as db:

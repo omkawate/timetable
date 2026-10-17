@@ -1,6 +1,13 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
+from collections import deque
+import json
+import time
+import sys
+import platform
+from zipfile import BadZipFile
+from xml.etree.ElementTree import ParseError
 from typing import Literal
 from fastapi import FastAPI, File, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
@@ -10,22 +17,35 @@ from . import storage
 from .domain import Configuration, COLLEGE, DAYS, PERIODS, parse_csv, configuration_csv
 from .scheduler import generate, preflight
 from .exports import pdf, excel
+from .exchange import configuration_csv_v2, configuration_excel, parse_upload
+from .analytics import analyze
+from .demo import presentation_config
+from .calendar import Settings
 
 ROOT = Path(__file__).resolve().parent.parent
 generation_lock = Lock()
+process_started = time.monotonic()
+request_times = deque(maxlen=500)
 
 @asynccontextmanager
 async def lifespan(app):
     storage.initialize()
     if storage.get_config()['revision'] == 0:
-        sample = parse_csv((ROOT / 'sample_data' / 'unisched_semesters_3_5_7.csv').read_bytes())
+        sample = presentation_config()
         try:
             storage.save_config(sample.model_dump(), 0)
         except storage.RevisionConflict:
             pass
     yield
 
-app = FastAPI(title='UniSched API', version='1.0.0', lifespan=lifespan)
+app = FastAPI(title='UniSched API', version='2.0.0', lifespan=lifespan)
+
+@app.middleware('http')
+async def measure_requests(request, call_next):
+    started = time.monotonic()
+    response = await call_next(request)
+    request_times.append((time.monotonic()-started)*1000)
+    return response
 
 class ConfigUpdate(BaseModel):
     revision: int = Field(ge=0)
@@ -34,6 +54,11 @@ class ConfigUpdate(BaseModel):
 class GenerateRequest(BaseModel):
     name: str = Field(default='Odd semester timetable', min_length=1, max_length=80)
     time_limit: int = Field(default=20, ge=5, le=120)
+    department_id: str | None = None
+    semester: int | None = Field(default=None, ge=1, le=8)
+    group_ids: list[str] | None = Field(default=None, max_length=30)
+    base_generation_id: int | None = Field(default=None, ge=1)
+    continue_latest: bool = True
 
     @field_validator('name')
     @classmethod
@@ -50,7 +75,8 @@ def health():
 
 @app.get('/api/meta')
 def meta():
-    return {'college': COLLEGE, 'days': DAYS, 'periods': PERIODS, 'recess': ['13:00','13:45']}
+    config = Configuration(**storage.get_config()['configuration'])
+    return {'college': COLLEGE, **config.settings.meta(), 'recess': ['13:00','13:45']}
 
 @app.get('/api/config')
 def configuration():
@@ -66,7 +92,7 @@ def save_configuration(payload: ConfigUpdate):
 
 @app.get('/api/config.csv')
 def export_configuration():
-    body = configuration_csv(Configuration(**storage.get_config()['configuration']))
+    body = configuration_csv_v2(Configuration(**storage.get_config()['configuration']))
     return Response('\ufeff'+body, media_type='text/csv', headers={'Content-Disposition': 'attachment; filename="unisched-academic-data.csv"'})
 
 @app.get('/api/sample.csv')
@@ -76,18 +102,22 @@ def sample_csv():
 @app.post('/api/import/preview')
 async def import_preview(file: UploadFile = File(...)):
     try:
-        config = parse_csv(await file.read(1_000_001))
-    except (ValueError, ValidationError) as exc:
+        config = parse_upload(await file.read(1_000_001), file.filename or 'data.csv')
+    except (ValueError, ValidationError, KeyError, TypeError, BadZipFile, ParseError, StopIteration) as exc:
         raise HTTPException(422, str(exc)) from exc
     finally:
         await file.close()
-    return {'configuration': config.model_dump(), 'counts': {k: len(v) for k,v in config.model_dump().items()},
+    return {'configuration': config.model_dump(), 'counts': {k: len(v) for k,v in config.model_dump().items() if isinstance(v,list)},
             'issues': preflight(config)}
 
 @app.get('/api/validate')
 def validate_configuration():
     config = Configuration(**storage.get_config()['configuration'])
     return {'issues': preflight(config)}
+
+@app.post('/api/calendar/preview')
+def preview_calendar(settings: Settings):
+    return settings.meta()
 
 @app.get('/api/generations')
 def generation_list():
@@ -100,7 +130,25 @@ def generate_timetable(payload: GenerateRequest):
     try:
         current = storage.get_config()
         config = Configuration(**current['configuration'])
-        result = generate(config, payload.time_limit)
+        groups = [g for g in config.groups if (not payload.department_id or g.department_id == payload.department_id)
+                  and (not payload.semester or g.semester == payload.semester)]
+        if payload.group_ids is not None:
+            if not set(payload.group_ids) <= {g.id for g in groups}:
+                raise HTTPException(422,'Selected divisions must belong to the chosen department and semester.')
+            groups = [g for g in groups if g.id in payload.group_ids]
+        if not groups:
+            raise HTTPException(422,'Choose at least one division with academic data.')
+        base = None
+        if payload.base_generation_id:
+            base = storage.get_generation(payload.base_generation_id)
+            if not base or base['result']['status'] != 'feasible' or base['config_revision'] != current['revision']:
+                raise HTTPException(409,'The base timetable must be successful and use the current academic data. Generate a fresh complete plan after editing data.')
+        elif payload.continue_latest:
+            match = next((r for r in storage.generations() if r['status']=='feasible' and r['config_revision']==current['revision']),None)
+            if match:
+                base = storage.get_generation(match['id'])
+        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [])
+        result['scope']['base_generation_id'] = base['id'] if base else None
         identifier = storage.save_generation(payload.name.strip() or 'Timetable', current['revision'], config.model_dump(), result)
         return storage.get_generation(identifier)
     finally:
@@ -112,6 +160,64 @@ def generation_detail(identifier: int):
     if result is None:
         raise HTTPException(404, 'Timetable not found.')
     return result
+
+@app.get('/api/generations/{identifier}/analytics')
+def generation_analytics(identifier: int):
+    return analyze(generation_detail(identifier))
+
+@app.get('/api/config.json')
+def export_json():
+    return Response(json.dumps(storage.get_config()['configuration'],indent=2),media_type='application/json',
+                    headers={'Content-Disposition':'attachment; filename="unisched-academic-backup.json"'})
+
+@app.get('/api/config.xlsx')
+def export_excel_data():
+    config = Configuration(**storage.get_config()['configuration'])
+    return Response(configuration_excel(config),media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition':'attachment; filename="unisched-academic-data.xlsx"'})
+
+@app.get('/api/demo/{format}')
+def demo_data(format: Literal['json','csv','xlsx']):
+    config = presentation_config()
+    body = config.model_dump_json(indent=2) if format=='json' else configuration_csv_v2(config) if format=='csv' else configuration_excel(config)
+    return Response(body,media_type={'json':'application/json','csv':'text/csv','xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}[format],
+                    headers={'Content-Disposition':f'attachment; filename="it_presentation.{format}"'})
+
+@app.get('/api/performance')
+def performance():
+    rows = storage.generations()
+    durations=[]
+    for row in rows:
+        record = storage.get_generation(row['id'])
+        row['duration'] = record['result'].get('elapsed_seconds',0)
+        row['sessions'] = len(record['result']['entries'])
+        durations.append(row['duration'])
+    latency = sorted(request_times)
+    peak_mb = None
+    try:
+        import resource
+        peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/(1024*1024 if sys.platform=='darwin' else 1024)
+    except ImportError:
+        if sys.platform=='win32':
+            import ctypes
+            from ctypes import wintypes
+            class Counters(ctypes.Structure):
+                _fields_ = [('cb',wintypes.DWORD),('PageFaultCount',wintypes.DWORD)]+[(name,ctypes.c_size_t) for name in
+                    ('PeakWorkingSetSize','WorkingSetSize','QuotaPeakPagedPoolUsage','QuotaPagedPoolUsage','QuotaPeakNonPagedPoolUsage','QuotaNonPagedPoolUsage','PagefileUsage','PeakPagefileUsage')]
+            counters=Counters()
+            counters.cb=ctypes.sizeof(counters)
+            ctypes.windll.kernel32.GetCurrentProcess.restype=wintypes.HANDLE
+            ctypes.windll.psapi.GetProcessMemoryInfo.argtypes=[wintypes.HANDLE,ctypes.POINTER(Counters),wintypes.DWORD]
+            if ctypes.windll.psapi.GetProcessMemoryInfo(ctypes.windll.kernel32.GetCurrentProcess(),ctypes.byref(counters),counters.cb):
+                peak_mb=counters.PeakWorkingSetSize/(1024*1024)
+    return {'python':platform.python_version(),'platform':platform.system(),'uptime_seconds':round(time.monotonic()-process_started),
+            'peak_memory_mb':round(peak_mb,1) if peak_mb is not None else None,'active_generation':generation_lock.locked(),
+            'average_api_ms':round(sum(latency)/len(latency),2) if latency else None,
+            'p95_api_ms':round(latency[min(len(latency)-1,int(len(latency)*.95))],2) if latency else None,
+            'request_samples':len(latency),'average_generation_seconds':round(sum(durations)/len(durations),3) if durations else None,
+            'success_rate':round(100*sum(r['status']=='feasible' for r in rows)/len(rows),1) if rows else None,
+            'fastest_seconds':min(durations) if durations else None,'slowest_seconds':max(durations) if durations else None,
+            'runs':rows,'measurement_note':'API latency covers the latest 500 completed requests in this process. Generation metrics cover the latest 100 saved runs, including failed and timed-out searches. Memory is peak resident process memory when available.'}
 
 @app.get('/api/generations/{identifier}/export/{format}')
 def export_generation(identifier: int, format: Literal['pdf','xlsx'], view: Literal['group','teacher']='group', target: str | None = Query(default=None, max_length=80)):

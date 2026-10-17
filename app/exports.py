@@ -2,107 +2,134 @@ import io
 from html import escape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from .domain import COLLEGE, DAYS, PERIODS
+from .domain import COLLEGE, Configuration
+from .calendar import clock, minutes
+
+
+def calendar_rows(settings):
+    rows=[{'time':start+'–'+end,'slot':slot} for slot,(start,end) in enumerate(settings.periods())]
+    rows += [{'time':pause.start+'–'+clock(minutes(pause.start)+pause.duration),'break':pause.name} for pause in settings.breaks]
+    return sorted(rows,key=lambda row:row['time'])
+
 
 def views(generation, view='group', target=None):
-    config = generation['config']
-    key = 'groups' if view == 'group' else 'teachers'
-    records = [item for item in config[key] if not target or item['id'] == target]
+    config=Configuration(**generation['config'])
+    data=config.model_dump()
+    settings=config.settings
+    entries=generation['result']['entries']
+    scheduled={e['group_id'] for e in entries}
+    key='groups' if view=='group' else 'teachers'
+    records=[item for item in data[key] if (not target or item['id']==target) and (view!='group' or item['id'] in scheduled)]
     if not records:
         raise ValueError('The selected division or professor is not in this saved timetable.')
-    maps = {name: {x['id']: x for x in config[name]} for name in ('teachers', 'subjects', 'groups', 'rooms')}
-    output = []
+    maps={name:{x['id']:x for x in data[name]} for name in ('teachers','subjects','groups','rooms','departments','batches')}
+    output=[]
     for record in records:
-        title = f"Semester {record['semester']} · Division {record['division']}" if view == 'group' else record['name']
-        entries = [e for e in generation['result']['entries'] if e[view+'_id'] == record['id']]
-        grid = [['Time', *DAYS]]
-        for slot, (start, end) in enumerate(PERIODS):
-            if slot == 4:
-                grid.append(['13:00–13:45', *['RECESS'] * 5])
-            row = [f'{start}–{end}']
-            for day in range(5):
-                entry = next((e for e in entries if e['day'] == day and e['slot'] <= slot < e['slot']+e['duration']), None)
-                if not entry:
-                    row.append('')
+        title=(f"{maps['departments'][record['department_id']]['code']} · Semester {record['semester']} · Division {record['division']}"
+               if view=='group' else record['name'])
+        selected=[e for e in entries if e[view+'_id']==record['id']]
+        grid=[['Time',*settings.days]]
+        for row in calendar_rows(settings):
+            if 'break' in row:
+                grid.append([row['time'], *[row['break'].upper()]*len(settings.days)])
+                continue
+            slot=row['slot']
+            cells=[row['time']]
+            for day in range(len(settings.days)):
+                blocked=next((b for b in settings.blocked if b.day==settings.days[day] and b.slot==slot),None)
+                if blocked:
+                    cells.append('BLOCKED\n'+blocked.reason)
                     continue
-                subject, group = maps['subjects'][entry['subject_id']], maps['groups'][entry['group_id']]
-                type_label = 'LAB' if entry['kind'] == 'lab' else 'LECTURE'
-                if subject['elective']:
-                    type_label += ' · ELECTIVE'
-                who = maps['teachers'][entry['teacher_id']]['name'] if view == 'group' else f"Sem {group['semester']} · Div {group['division']}"
-                row.append(f"{subject['code']} · {type_label}\n{subject['name']}\n{who}\n{maps['rooms'][entry['room_id']]['name']}")
-            grid.append(row)
-        output.append((title, grid, sum(e['duration'] for e in entries)))
+                matches=[e for e in selected if e['day']==day and e['slot']<=slot<e['slot']+e['duration']]
+                texts=[]
+                for e in matches:
+                    subject,group=maps['subjects'][e['subject_id']],maps['groups'][e['group_id']]
+                    kind=e['kind'].upper()+(' · ELECTIVE' if subject['elective'] else '')
+                    who=maps['teachers'][e['teacher_id']]['name'] if view=='group' else f"{maps['departments'][group['department_id']]['code']} · Sem {group['semester']} · Div {group['division']}"
+                    batch=' · '+maps['batches'][e['batch_id']]['name'] if e.get('batch_id') else ''
+                    texts.append(f"{subject['code']} · {kind}\n{subject['name']}\n{who}{batch}\n{maps['rooms'][e['room_id']]['name']}")
+                cells.append('\n—\n'.join(texts))
+            grid.append(cells)
+        output.append((title,grid,sum(e['duration']*settings.period_minutes/60 for e in selected)))
     return output
 
-def excel(generation, view='group', target=None):
-    workbook = Workbook()
+
+def excel(generation,view='group',target=None):
+    workbook=Workbook()
     workbook.remove(workbook.active)
-    for index, (title, grid, hours) in enumerate(views(generation, view, target), 1):
-        sheet = workbook.create_sheet(f'{index} '+ ('Division' if view == 'group' else 'Professor'))
-        for row, text in [(1, COLLEGE), (2, f'UniSched | {title}'), (3, f"{generation['name']} | {hours} teaching hours / week | Recess 13:00–13:45")]:
-            sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
-            cell = sheet.cell(row, 1, text)
-            cell.data_type = 's'
-            cell.font = Font(name='Calibri', size=14 if row == 1 else 11, bold=row != 3, color='252645')
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-            sheet.row_dimensions[row].height = 25
-        for r, values in enumerate(grid, 5):
-            for c, value in enumerate(values, 1):
-                cell = sheet.cell(r, c, value)
-                cell.data_type = 's'
-                cell.alignment = Alignment(wrap_text=True, vertical='center', horizontal='center')
-                cell.font = Font(name='Calibri', size=10, color='FFFFFF' if r == 5 else '252645', bold=r == 5 or c == 1)
-                cell.fill = PatternFill('solid', fgColor='5046D6' if r == 5 else 'F0EEFF' if r == 10 else 'F6F7FB')
-                cell.border = Border(bottom=Side(style='thin', color='DFE2EB'))
-            sheet.row_dimensions[r].height = 25 if r in (5,10) else 78
-        sheet.column_dimensions['A'].width = 19
-        for column in 'BCDEF':
-            sheet.column_dimensions[column].width = 32
-        sheet.freeze_panes = 'B6'
-        sheet.sheet_view.showGridLines = False
-        sheet.page_setup.orientation = 'landscape'
-        sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
-        sheet.page_setup.fitToWidth = 1
-        sheet.page_setup.fitToHeight = 1
-        sheet.sheet_properties.pageSetUpPr.fitToPage = True
-        sheet.print_options.horizontalCentered = True
-        sheet.print_area = 'A1:F14'
-        sheet.oddFooter.center.text = 'UniSched · &P / &N'
-    output = io.BytesIO()
+    for index,(title,grid,hours) in enumerate(views(generation,view,target),1):
+        sheet=workbook.create_sheet(f'{index} '+('Division' if view=='group' else 'Professor'))
+        columns=len(grid[0])
+        last=get_column_letter(columns)
+        for row,text in [(1,COLLEGE),(2,f'UniSched | {title}'),(3,f"{generation['name']} | {hours:g} scheduled teaching hours / week")]:
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=columns)
+            cell=sheet.cell(row,1,text)
+            cell.data_type='s'
+            cell.font=Font(name='Calibri',size=14 if row==1 else 11,bold=row!=3,color='252645')
+            cell.alignment=Alignment(horizontal='center',vertical='center')
+            sheet.row_dimensions[row].height=25
+        settings=Configuration(**generation['config']).settings
+        break_names={b.name.upper() for b in settings.breaks}
+        for r,values in enumerate(grid,5):
+            pause=all(value in break_names for value in values[1:])
+            for c,value in enumerate(values,1):
+                cell=sheet.cell(r,c,value)
+                cell.data_type='s'
+                cell.alignment=Alignment(wrap_text=True,vertical='center',horizontal='center')
+                cell.font=Font(name='Calibri',size=10,color='FFFFFF' if r==5 else '252645',bold=r==5 or c==1)
+                cell.fill=PatternFill('solid',fgColor='5046D6' if r==5 else 'F0EEFF' if pause else 'F6F7FB')
+                cell.border=Border(bottom=Side(style='thin',color='DFE2EB'))
+            sheet.row_dimensions[r].height=25 if r==5 or pause else max(78,max(value.count('\n') for value in values)*13+20)
+        sheet.column_dimensions['A'].width=19
+        for c in range(2,columns+1):
+            sheet.column_dimensions[get_column_letter(c)].width=32
+        sheet.freeze_panes='B6'
+        sheet.sheet_view.showGridLines=False
+        sheet.page_setup.orientation='landscape'
+        sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
+        sheet.page_setup.fitToWidth=1
+        sheet.page_setup.fitToHeight=1
+        sheet.sheet_properties.pageSetUpPr.fitToPage=True
+        sheet.print_options.horizontalCentered=True
+        sheet.print_area=f'A1:{last}{len(grid)+4}'
+        sheet.oddFooter.center.text='UniSched · &P / &N'
+    output=io.BytesIO()
     workbook.save(output)
     return output.getvalue()
 
-def pdf(generation, view='group', target=None):
-    output = io.BytesIO()
-    document = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=24, rightMargin=24,
-                                 topMargin=20, bottomMargin=20, title='UniSched timetable', author=COLLEGE)
-    heading = ParagraphStyle('heading', fontName='Helvetica-Bold', fontSize=13, leading=17, textColor=colors.HexColor('#252645'), alignment=TA_CENTER)
-    subheading = ParagraphStyle('subheading', fontName='Helvetica', fontSize=9, leading=13, alignment=TA_CENTER)
-    cellstyle = ParagraphStyle('cell', fontName='Helvetica', fontSize=6.8, leading=8.2, alignment=TA_CENTER)
-    headerstyle = ParagraphStyle('header', parent=cellstyle, fontName='Helvetica-Bold', textColor=colors.white)
-    story = []
-    for index, (title, grid, hours) in enumerate(views(generation, view, target)):
+
+def pdf(generation,view='group',target=None):
+    output=io.BytesIO()
+    document=SimpleDocTemplate(output,pagesize=landscape(A4),leftMargin=24,rightMargin=24,topMargin=20,bottomMargin=20,title='UniSched timetable',author=COLLEGE)
+    heading=ParagraphStyle('heading',fontName='Helvetica-Bold',fontSize=13,leading=17,textColor=colors.HexColor('#252645'),alignment=TA_CENTER)
+    subheading=ParagraphStyle('subheading',fontName='Helvetica',fontSize=9,leading=13,alignment=TA_CENTER)
+    cellstyle=ParagraphStyle('cell',fontName='Helvetica',fontSize=6.8,leading=8.2,alignment=TA_CENTER)
+    headerstyle=ParagraphStyle('header',parent=cellstyle,fontName='Helvetica-Bold',textColor=colors.white)
+    story=[]
+    settings=Configuration(**generation['config']).settings
+    break_names={b.name.upper() for b in settings.breaks}
+    for index,(title,grid,hours) in enumerate(views(generation,view,target)):
         if index:
             story.append(PageBreak())
-        story += [Paragraph(escape(COLLEGE), heading), Spacer(1, 5),
-                  Paragraph(escape(f"UniSched | {title} | {generation['name']}"), subheading),
-                  Paragraph(escape(f'{hours} teaching hours/week · Monday–Friday · 09:00–17:45'), subheading), Spacer(1, 10)]
-        table = Table([[Paragraph(escape(value).replace('\n', '<br/>'), headerstyle if r == 0 else cellstyle)
-                        for value in row] for r, row in enumerate(grid)],
-                       colWidths=[74]+[144]*5, rowHeights=[23]+[48]*4+[20]+[48]*4)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#5046D6')),
-            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F7F8FC')),
-            ('BACKGROUND', (0,5), (-1,5), colors.HexColor('#EDEBFF')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('GRID', (0,0), (-1,-1), .4, colors.HexColor('#DDE0E9')),
-            ('LEFTPADDING', (0,0), (-1,-1), 4), ('RIGHTPADDING', (0,0), (-1,-1), 4)]))
-        story += [table, Spacer(1, 7), Paragraph('Labs occupy two consecutive periods. Empty cells indicate no scheduled teaching. Recess: 13:00–13:45.', subheading)]
+        story += [Paragraph(escape(COLLEGE),heading),Spacer(1,5),Paragraph(escape(f"UniSched | {title} | {generation['name']}"),subheading),
+                  Paragraph(escape(f"{hours:g} scheduled teaching hours/week · {settings.start}–{settings.end}"),subheading),Spacer(1,10)]
+        table=Table([[Paragraph(escape(value).replace('\n','<br/>'),headerstyle if r==0 else cellstyle) for value in row] for r,row in enumerate(grid)],
+                    colWidths=[74]+[720/(len(grid[0])-1)]*(len(grid[0])-1),repeatRows=1)
+        commands=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#5046D6')),
+                  ('BACKGROUND',(0,1),(-1,-1),colors.HexColor('#F7F8FC')),
+                  ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('GRID',(0,0),(-1,-1),.4,colors.HexColor('#DDE0E9')),
+                  ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
+                  ('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]
+        for r,row in enumerate(grid[1:],1):
+            if all(value in break_names for value in row[1:]):
+                commands.append(('BACKGROUND',(0,r),(-1,r),colors.HexColor('#EDEBFF')))
+        table.setStyle(TableStyle(commands))
+        story += [table,Spacer(1,7),Paragraph('Empty cells indicate no scheduled teaching. Multi-period sessions repeat across their occupied periods. Batch sessions are identified by name.',subheading)]
     document.build(story)
     return output.getvalue()

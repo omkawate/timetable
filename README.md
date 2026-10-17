@@ -55,127 +55,130 @@ curl.exe -fL https://raw.githubusercontent.com/omkawate/timetable/main/requireme
 
 If the file download fails, use **Code → Download ZIP** on GitHub and copy `requirements.lock` from the new ZIP into your existing project folder. Keep your `data` folder.
 
+## Update an existing installation
+
+1. Stop the old server with **Ctrl+C** and keep a backup of its `data` folder.
+2. Extract the updated ZIP into a **new folder**. Copy the old `data` folder into it while both servers are stopped. This preserves academic data and saved timetable history.
+3. Run `start_windows.bat` from the new folder. Do not copy `.venv` between folders; the launcher creates it.
+4. Open http://127.0.0.1:8000 and press **Ctrl+F5** to load the updated website.
+5. Existing data is preserved. To try the fuller IT curriculum, open **Import data → Preview IT reference data → Replace academic data**. Download the full JSON backup before replacing your editable data. Old timetable snapshots remain available.
+
+A fresh database starts with the new IT presentation dataset. Older databases receive compatible defaults in memory: an existing-data department, original calendar, automatic capacity defaults, and the original weekly limits. Reading the database does not rewrite historical snapshots.
+
 ## Use the website
 
-1. **Academic setup:** review or add teachers, subjects, rooms/labs, divisions, and teaching assignments. Edit or delete records using the row controls. References are validated: a teacher or room used by an assignment cannot be deleted until that assignment is updated.
-2. **Import data:** upload a CSV, examine its validation report, and choose **Replace academic data**. You can first back up the current configuration with **Export data CSV**. Importing replaces the editable configuration and preserves all saved timetable snapshots.
-3. **Generate timetable:** name the timetable and choose a 20-, 60-, or 120-second search limit. All years/divisions are solved together so shared teachers and rooms cannot clash.
-4. **Timetables:** switch between division and professor views. A professor view shows only that teacher’s sessions, with the year, division, and room; all other teaching cells are blank.
-5. **Export:** download the current view as PDF or Excel, all divisions as a PDF/Excel file, or all professors as an Excel workbook. Every timetable includes the college name. Each Excel worksheet and PDF page corresponds to one selected division/professor.
-6. Select an older generation to view its immutable snapshot. An alert appears if the editable academic data has changed since that generation.
+- **Department selector:** focus management screens and generation on IT or another department. Add departments through **Departments**.
+- **Subjects & courses:** choose the academic year (First, Second, Third, Final), odd/even semester, department, course type, default contact hours, and elective set. Default contact hours prefill new assignments; assignment session counts are the actual scheduling requirements.
+- **Academic setup:** manage assignments, teachers, subjects, divisions, rooms, departments, lab batches, and elective sets. Lab batches belong to a division; their total strength cannot exceed the division's strength. Linked records must be reassigned before deletion.
+- **Faculty workload:** edit daily period limits, weekly hour limits, arrival/departure times, email, short code, and lab/project eligibility. A teacher's load includes assignments across all departments.
+- **Generate by division:** choose the department and semester, then **Generate Division A**, **B**, **C**, or **Generate all selected divisions**. The buttons reflect the actual divisions you created.
+- **Timetables:** select a saved version, academic year, division, or professor. Professor grids show only that person's classes; other teaching cells remain blank. Multi-period labs/projects are labelled as starting or continuing. Parallel practical batches are labelled separately.
+- **Exports:** current view and all divisions as PDF/Excel; all professors as Excel. Every exported timetable displays the college name and uses the saved version's calendar.
+- **College timings:** configure hours, working days, period length, breaks, blocked college activities, and lecture/lab/project durations. Preview periods before saving.
+- **Analytics & conflicts:** inspect actual conflicts, student gaps, daily spans, teaching loads, and room utilization from a saved generation. Failed runs display problems and suggested changes.
+- **Version history / Performance:** reopen snapshots and inspect measured runtimes, success rate, recent API latency, uptime, and peak process memory.
 
-## Scheduling rules and assumptions
+### Generating one division safely
 
-| Requirement | Implemented behavior |
+By default, generation preserves sessions outside your selected divisions from the latest successful plan with the **same data revision**. For example, generate A, then B: A stays fixed while B is scheduled around its faculty, room, and elective reservations. The result lists scheduled and remaining divisions.
+
+Preserving earlier choices can make a later division impossible even when a completely new joint plan would work. In that case, select all affected divisions and generate them together. Uncheck **Preserve other divisions** to start an independent plan; it does not claim coordination with other saved versions. Changing academic data starts a new revision, so incompatible historical schedules are never silently used as a base.
+
+## Presentation dataset
+
+The folder `sample_data` includes the same complete IT dataset in three formats:
+
+- [`it_presentation.csv`](sample_data/it_presentation.csv): one editable file for semesters 3, 5, and 7, divisions A/B/C.
+- [`it_presentation.xlsx`](sample_data/it_presentation.xlsx): separate worksheets for academic entities and settings.
+- [`it_presentation.json`](sample_data/it_presentation.json): full backup with stable identifiers.
+
+It contains **24 illustrative subjects, 24 teachers, 9 divisions, and 72 assignments**. The resources are **7 shared classrooms and 2 shared laboratories**, fewer classrooms than divisions. Each division needs **26 lecture hours + three 2-hour labs = 32 hours/week**. Teacher limits are 20 hours/week and 5 teaching periods/day. Room capacity is 70; each division has 60 students.
+
+The calendar starts at **09:00**, with recess **13:00–13:45**, and permits teaching until **17:45**. The verified complete solution has **261 sessions / 288 teaching hours**, no internal student gaps, no audited conflicts, and a maximum of seven teaching periods per student day. Most days finish at 15:45–16:45; a shorter day is possible. The solver determines exact placements. Room-period utilization is **80%** across the nine rooms (288 / 360).
+
+This is presentation data, **not an official DMCE curriculum or faculty directory**. No filler sessions are invented. The original 22-hour/week dataset remains at [`unisched_semesters_3_5_7.csv`](sample_data/unisched_semesters_3_5_7.csv), and its 171-session / 198-hour generation remains regression-tested.
+
+See [the presentation walkthrough](docs/PRESENTATION.md) and [the screenshot feature comparison](docs/FEATURE_COMPARISON.md).
+
+## Scheduling rules
+
+The solver uses **Google OR-Tools CP-SAT**. Mandatory session choices and resource occupancy constraints enforce:
+
+| Rule | Behavior |
 | --- | --- |
-| Teaching week | Monday–Friday |
-| Teaching periods | 09:00–10:00, 10:00–11:00, 11:00–12:00, 12:00–13:00, 13:45–14:45, 14:45–15:45, 15:45–16:45, 16:45–17:45 |
-| Recess | 13:00–13:45, excluded from teaching hours |
-| No gaps | Each division’s active day starts at 09:00 and contains consecutive periods, except recess. A division with at least five weekly hours attends all five weekdays. Days can finish early. No filler classes are invented. |
-| Teacher hours | Weekly **maximum teaching hours**, counted across every year and division. A one-hour lecture counts as one; a two-hour lab counts as two. |
-| Availability | The teacher’s coming/leaving time applies on every weekday. An entire lecture/lab must fit within it. Partial hours do not form a teaching period. |
-| Lectures | One hour each; the exact requested weekly count is placed. |
-| Labs | Two consecutive hours per lab session; a lab cannot cross recess or the end of the day. Lab count means **sessions**, not hours. |
-| Electives | Every elective session has a distinct slot within its semester, including across divisions and including elective labs. Electives in different semesters can overlap if no teacher or room clashes. |
-| Rooms | Each division has a home lecture classroom; each lab assignment chooses its lab. A physical room name is unique. Shared rooms are supported but cannot be double-booked. |
-| Subject assignments | One teacher per subject per division, used for both lectures and labs. The subject and division must have matching semesters. |
-| Years | Semester 3 = Second Year; 5 = Third Year; 7 = Final Year. Divisions such as A/B/C are editable. |
-| Professor view | Gaps are intentionally blank; the no-gap rule applies to **divisions**, not professors. |
+| Student continuity | Every active student/batch day begins at the first available period and has no internal holes, except configured breaks or blocked periods. Loads covering at least the number of working days attend every available working day. Days can finish early. |
+| Teacher availability | Coming/leaving time, daily teaching-period cap, weekly teaching-hour cap, and lab/project eligibility. |
+| Resource collisions | A teacher or room cannot be double-booked across departments or divisions in the same plan. |
+| Room selection | Fixed classroom/lab or automatic allocation among rooms matching capacity, department, and academic year. Empty room year eligibility means all years; no department means shared college room. |
+| Sessions | Exact lecture, lab, and project counts. Multi-period sessions stay consecutive in real time and never cross breaks, blocks, or the end of the day. |
+| Batches | Whole-division teaching occupies every batch. Separate batches can attend different practical sessions simultaneously when faculty and rooms permit. Unassigned remaining students form an additional student unit. |
+| Electives | Separate slots across the same department and semester, including its divisions. Elective sets organize related courses; they do **not** make alternatives run simultaneously. |
+| Balance | Minimize the largest student daily teaching load; report whether optimality was proven. No requirements are silently relaxed. |
 
-This version treats each elective as a subject attended by its whole division. Student-specific elective baskets, split lab batches, day-specific teacher availability, room seat/equipment capacities, holidays, and separate lecture/lab instructors are future extensions. The sample is an illustrative Computer Engineering dataset; it is not an official DMCE syllabus or faculty roster.
+Preflight checks explain excess workload, insufficient room capacity/eligibility, missing assignments, unavailable lab windows, and other obvious problems. CP-SAT checks the combination. When proven infeasible, a diagnostic search identifies a sufficient conflicting set where possible; it need not be minimal. Suggestions are **not applied automatically**. A search timeout is reported as **Search limit**, never proof of impossibility.
 
-## How generation and explanations work
+Analytics independently reconstructs occupancy, exact session counts, session duration, faculty caps, eligible rooms, and student continuity. Health is 100 minus five per audited violation (minimum zero). Student quality is teaching periods divided by teaching periods plus internal gaps. Room utilization uses all rooms in the saved configuration, so partial-generation utilization will be lower. Batch session hours are contact-session hours summed over batches, not the weekly hours of one individual student.
 
-The scheduler creates Boolean choices for each eligible lecture/lab start time. It enforces exact weekly counts, non-overlapping teachers/divisions/rooms, teacher availability, separate elective periods, and continuous division days. It minimizes the largest daily teaching load across divisions to balance the week.
+## Import and backup formats
 
-Before searching, workload checks catch obvious impossibilities such as an overloaded teacher, insufficient full teaching periods, an unavailable two-hour lab window, or an overbooked room. The report gives the concrete shortage and suggests a change.
+Imports accept UTF-8 CSV, `.xlsx`, or JSON up to 1 MB. They preview the configuration and basic issues before an explicit replacement. JSON and Excel preserve unassigned records and identifiers; use them for full backups. Excel imports require the named worksheets from the supplied template and literal cell values rather than formulas.
 
-For a conflict between otherwise valid requirements, CP-SAT proves infeasibility and an assumption-based diagnostic search identifies a sufficient conflicting set when it can do so within the remaining time. The set is not guaranteed minimal. The report lists the involved assignments/rules and suggested changes. Suggestions are **not automatically applied**; you decide which academic requirements to change. If the solver finds no complete timetable before the deadline, the UI reports **Search limit**, not “impossible.”
+The extended CSV uses the original thirteen assignment columns plus department, strength, faculty daily limit/contact details/eligibility, project count, batch, elective set, course type, and default hours. Its first row includes room pools, department metadata, and calendar settings as JSON. Those cells preserve shared-room eligibility; retain them when editing the file in Excel. **CSV exports represent assigned records** and recreate assignment/student/subject identifiers on import; use full JSON/Excel to preserve every record.
 
-Successful generations report which constraints were satisfied, the placement totals, the elapsed time, and whether the best daily balance was proven. All required sessions remain mandatory even when balancing stops before reaching the best possible balance.
-
-For the supplied dataset, the generator schedules **9 divisions, 18 teachers, 171 sessions, and 198 teaching hours**. Each division has 22 teaching hours/week, and the optimal maximum daily load is 5 hours.
-
-## CSV format
-
-The complete file is [`sample_data/unisched_semesters_3_5_7.csv`](sample_data/unisched_semesters_3_5_7.csv). It contains all three semesters and divisions A, B, C in **one file**, with 54 teaching-assignment rows.
-
-Use these exact headers in this order:
+The original 13-column CSV is still supported:
 
 ```csv
 semester,division,teacher_name,teacher_hours_per_week,teacher_arrival,teacher_departure,subject_name,subject_code,elective,classroom,lab_room,lectures_per_week,labs_per_week
-```
-
-Example:
-
-```csv
 3,A,Prof. Rahul Patil,18,09:00,17:45,Data Structures,CSC302,false,201,Lab 3-2,3,1
 ```
 
-Save as UTF-8 CSV, up to 1 MB. Use 24-hour times and whole-number counts. Elective accepts `true`/`false`, `yes`/`no`, or `1`/`0`. Leave `lab_room` blank when no lab is needed. Repeated teacher names, subject codes, room names, and semester/division pairs must have consistent details. Conflicting duplicates, duplicate division/subject assignments, malformed rows, invalid references, and unsupported semesters are rejected before saving. Names are matched case-insensitively; use one consistent spelling.
-
-Configuration limits are 100 teachers, 120 subjects, 100 rooms, 30 divisions, and 240 assignments. Large constrained datasets may need longer search time. The CSV exporter neutralizes spreadsheet formula prefixes in text fields; such unusually prefixed names receive a leading apostrophe on CSV export.
+Use 24-hour times and whole-number counts. Repeat details consistently. CSV text starting with spreadsheet formula prefixes receives a leading apostrophe on export. Limits: 100 teachers, 120 subjects, 100 rooms, 30 divisions, 240 assignments, 30 departments, 120 batches, 80 elective sets. Larger or tighter plans may need the 60/120-second search options.
 
 ## Project layout
 
 ```text
 app/
-  main.py         HTTP API, uploads, downloads, and static website
-  domain.py       Typed academic data, validation, and CSV conversion
-  scheduler.py    CP-SAT model, workload checks, and conflict explanations
-  storage.py      SQLite configuration revisions and generation snapshots
+  main.py         FastAPI routes, generation scope, diagnostics metrics
+  domain.py       Academic records and reference validation
+  calendar.py     Validated calendar and period calculations
+  scheduler.py    CP-SAT constraints, balancing, infeasibility explanations
+  resources.py    Student units, session requirements, room eligibility
+  analytics.py    Independent saved-timetable audit and measured statistics
+  exchange.py     CSV, Excel, JSON import and backup
+  demo.py         Reproducible IT presentation data
+  storage.py      SQLite revisions and immutable snapshots
   exports.py      College-branded PDF and Excel timetables
 static/
-  index.html      Website shell
-  app.js          Dashboard, forms, import, schedule views, and exports
-  style.css       Responsive desktop/mobile styles
-sample_data/
-  unisched_semesters_3_5_7.csv
-tests/
-  test_scheduler.py  Independent constraint verification and failure cases
-  test_api.py        Persistence, imports, exports, and API behavior
-  browser_smoke.py   Real Chromium desktop/mobile user workflows
-data/               SQLite database, created automatically and gitignored
-run.py
-start_windows.bat    Windows setup and startup helper
-requirements.txt    Direct runtime dependencies
-requirements.lock   Tested runtime dependencies with exact versions
+  index.html      Original website shell with additional navigation
+  app.js          Shared UI, API helpers, dialogs, original workspace
+  workspace.js    Department, scoped generation, management and analysis screens
+  style.css       Responsive purple design
+sample_data/      Original CSV plus IT presentation CSV/Excel/JSON
+tests/            API, scheduler, upgrade, export and browser regressions
+docs/             Feature comparison and demonstration walkthrough
+data/             SQLite files created automatically, excluded from Git/ZIP
+run.py            Server entrypoint
+start_windows.bat Windows dependency setup and startup
+requirements.lock Tested exact runtime dependencies for Python 3.11/3.12
 ```
 
-SQLite stores the validated academic configuration as a versioned JSON document in the `configuration` table, and immutable configuration/result snapshots in `generations`. Writes are transactional. Revision checks prevent one browser window silently overwriting changes from another. This keeps CSV replacement atomic and preserves historical timetables. The API uses one server worker and serializes timetable generation; it is designed for a single-coordinator installation.
+SQLite stores versioned configuration JSON and immutable generation snapshots. Writes are transactional; revision checks prevent stale windows from silently overwriting changes. Generation uses a single server worker with a lock. The history/performance lists cover the latest 100 saved runs; older records remain stored and accessible by ID. Runtime API latency covers the latest 500 completed requests, including long generation requests.
 
-## Tests
+## Verification
 
 ```bash
 .venv/bin/python -m pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
-```
-
-The tests independently reconstruct every occupied teacher, room, division, and elective period, verify exact lecture/lab counts and continuous days, test impossible configurations and time limits, parse exported PDFs/Excel workbooks, and check immutable snapshots and invalid imports. Tests use temporary databases.
-
-For real browser testing, install Chromium or a Playwright browser:
-
-```bash
 .venv/bin/python -m playwright install chromium
 .venv/bin/python tests/browser_smoke.py
 ```
 
-The browser script automatically uses a system `chromium` if present; alternatively set `CHROMIUM_PATH` to your executable. It starts its own temporary server/database, tests CRUD, CSV import, generation, professor filtering, downloads, conflict explanations, and mobile navigation, and saves screenshots under ignored `artifacts/`. It does not alter your normal academic data.
+On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe`. Browser tests automatically use a system `chromium` if available, or `CHROMIUM_PATH`. Tests create disposable SQLite databases and leave the user's data untouched. Screenshots and test exports go in ignored `artifacts/`.
 
-## Deployment and useful next additions
+## Further additions
 
-This is a functional single-coordinator application. It defaults to loopback access. Before exposing it publicly, add authenticated administrator/faculty accounts, HTTPS, access control, and backups. SQLite data can be backed up safely with SQLite’s online backup API; avoid copying only the `.db` file while the WAL-mode server is writing. There is no deployment or public hosting included.
-
-Suggested additions, in priority order:
-
-1. **Login and approval:** coordinator editing, faculty read-only views, and head-of-department approval before publication.
-2. **Academic calendar:** configurable weekdays/period lengths, holidays, and teacher leave or per-day availability.
-3. **Lab batches and elective baskets:** schedule student groups independently and allow separate lab instructors.
-4. **Manual pinning:** lock approved sessions, then regenerate the rest while checking collisions.
-5. **Room capacity/equipment:** match class size, computers, projectors, and specialist laboratories.
-6. **Substitutions and notifications:** find available replacement faculty, compare timetable versions, and optionally notify affected users.
-7. **Institution-wide planning:** departments, even semesters, calendar feeds, attendance integration, and role-aware exports.
+Useful next steps are coordinator/faculty login and publication approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator; there is no external AI service or automatic email messaging. Authentication and HTTPS would be needed before public deployment.
 
 ## Reusable cloud workflow
 
-Use the existing checkout at `/workspace/timetable`; cloud tasks already run in an isolated environment. Do not create a Git worktree unless specifically requested. Dependencies and SQLite files can persist in a filesystem snapshot, but server processes must be restarted. Install from `requirements.lock`, run `run.py`, check `/api/health`, and use `pytest` for validation. No secrets or remote services are required at runtime.
+Use `/workspace/timetable`. Install `requirements-dev.txt`, run `run.py`, check `/api/health`, and run `pytest`. No frontend build, external database service, or secrets are required. Server processes must be restarted after restoring an environment snapshot. Keep real SQLite data out of source archives.

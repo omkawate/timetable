@@ -13,6 +13,9 @@ SAMPLE = Path(__file__).resolve().parents[1] / 'sample_data' / 'unisched_semeste
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv('UNISCHED_DB', str(tmp_path / 'test.db'))
+    from app import storage
+    storage.initialize()
+    storage.save_config(parse_csv(SAMPLE.read_bytes()).model_dump(), 0)
     with TestClient(app) as client:
         yield client
 
@@ -37,7 +40,7 @@ def test_import_preview_does_not_mutate_database(client):
     before = client.get('/api/config').json()
     response = client.post('/api/import/preview', files={'file':('sample.csv',SAMPLE.read_bytes(),'text/csv')})
     assert response.status_code == 200
-    assert response.json()['counts'] == {'teachers':18,'subjects':18,'rooms':15,'groups':9,'offerings':54}
+    assert response.json()['counts'] == {'teachers':18,'subjects':18,'rooms':15,'groups':9,'offerings':54,'departments':1,'batches':0,'elective_sets':0}
     assert response.json()['issues'] == []
     assert client.get('/api/config').json() == before
     result = client.put('/api/config', json={'revision':before['revision'],'configuration':response.json()['configuration']})
