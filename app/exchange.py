@@ -9,7 +9,7 @@ from .domain import Configuration, CSV_FIELDS, parse_csv
 EXTRA_FIELDS = ['department_code','department_name','student_strength','teacher_daily_limit',
                 'teacher_email','teacher_short_code','teacher_lab_eligible','project_sessions_per_week',
                 'batch_name','batch_strength','elective_set','course_type','weekly_hours',
-                'classroom_pool','lab_pool','calendar_json','department_pool','teacher_department_code','elective_set_code']
+                'classroom_pool','lab_pool','calendar_json','department_pool','teacher_department_code','elective_set_code','project_hours_per_session']
 V2_FIELDS = CSV_FIELDS + EXTRA_FIELDS
 TABLES = ['departments','teachers','subjects','rooms','groups','batches','elective_sets','offerings']
 
@@ -33,7 +33,7 @@ def configuration_csv_v2(config):
             m['rooms'][o.lab_room_id].name if o.lab_room_id else '',o.lectures,o.labs]))
         row.update(department_code=dept.code,department_name=dept.name,student_strength=g.strength,
             teacher_daily_limit=t.max_daily_slots,teacher_email=t.email,teacher_short_code=t.short_code,
-            teacher_lab_eligible=str(t.lab_eligible).lower(),project_sessions_per_week=o.projects,
+            teacher_lab_eligible=str(t.lab_eligible).lower(),project_sessions_per_week=o.projects,project_hours_per_session=o.project_hours,
             batch_name=m['batches'][o.batch_id].name if o.batch_id else '',
             batch_strength=m['batches'][o.batch_id].strength if o.batch_id else '',
             elective_set=m['elective_sets'][s.elective_set_id].name if s.elective_set_id else '',
@@ -51,7 +51,7 @@ def parse_extended_csv(content):
     rows = list(csv.DictReader(io.StringIO(content)))
     if not rows or len(rows)>240:
         raise ValueError('Provide 1–240 assignment rows.')
-    if list(rows[0]) != V2_FIELDS:
+    if list(rows[0]) not in (V2_FIELDS, V2_FIELDS[:-1]):
         raise ValueError('CSV headers must match the original or updated sample template exactly.')
     data = {key:[] for key in TABLES}
     data['settings'] = {}
@@ -147,7 +147,8 @@ def parse_extended_csv(content):
                 batch = add('batches',(group,row['batch_name']),{'group_id':group,'name':row['batch_name'],'strength':int(row['batch_strength'])})
             data['offerings'].append({'id':f'o{len(data["offerings"])+1}','teacher_id':teacher,'subject_id':subject,
                 'group_id':group,'lectures':int(row['lectures_per_week']),'labs':int(row['labs_per_week']),
-                'projects':int(row['project_sessions_per_week'] or 0),'batch_id':batch,'lab_room_id':lab})
+                'projects':int(row['project_sessions_per_week'] or 0),
+                'project_hours':float(row['project_hours_per_session']) if row.get('project_hours_per_session') else None,'batch_id':batch,'lab_room_id':lab})
         except (KeyError,ValueError,TypeError) as exc:
             raise ValueError(f'CSV row {number}: {exc}') from exc
     return Configuration(**data)

@@ -2,7 +2,8 @@
 from collections import defaultdict, Counter
 import math
 from .domain import Configuration, minutes
-from .resources import affected_units, eligible_rooms, student_units, session_specs
+from .classrooms import classroom_metrics
+from .resources import affected_units, eligible_rooms, student_units, session_specs, batch_lab_problems
 
 
 def analyze(record):
@@ -54,6 +55,16 @@ def analyze(record):
             if count>math.ceil(m['offerings'][offering_id].lectures/len(settings.days)):
                 violations.append(f'{m["subjects"][m["offerings"][offering_id].subject_id].code}: too many lectures on {settings.days[day]}; spread them across different days.')
     scheduled = {e['group_id'] for e in entries}
+    violations.extend(batch_lab_problems(config, scheduled))
+    if settings.synchronized_batch_labs:
+        for group_id in scheduled:
+            batches = [b for b in config.batches if b.group_id == group_id]
+            if not batches:
+                continue
+            labs = [e for e in entries if e['group_id'] == group_id and e['kind'] == 'lab']
+            if (Counter(e.get('batch_id') for e in labs) != Counter(b.id for b in batches)
+                    or len({(e['day'],e['slot'],e['duration']) for e in labs}) != 1):
+                violations.append(f'{group_id}: all batch labs must occupy one common weekly block. Move all batches together.')
     for o in config.offerings:
         if o.group_id in scheduled:
             for kind,count,duration in session_specs(config,o):
@@ -94,7 +105,7 @@ def analyze(record):
     available=sum(len(settings.available(d)) for d in range(len(settings.days)))
     room_rows=[{'id':r.id,'name':r.name,'kind':r.kind,'capacity':r.capacity,'used_periods':room_load[r.id],
                 'available_periods':available,'utilization':round(100*room_load[r.id]/available,1) if available else 0} for r in config.rooms]
-    return {'available':True,'hard_conflicts':len(violations),'violations':violations,
+    return {'available':True,'classroom_optimization':classroom_metrics(config,entries),'hard_conflicts':len(violations),'violations':violations,
         'health_score':100 if not violations else max(0,100-len(violations)*5),
         'student_quality':round(100*filled/(filled+gaps),1) if filled+gaps else 0,
         'internal_gaps':gaps,'idle_minutes':gaps*settings.period_minutes,'compact_days':sum(r['gaps']==0 for r in student_rows),

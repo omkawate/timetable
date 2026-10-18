@@ -19,12 +19,12 @@ CATALOG = {
 def presentation_config():
     data={'departments':[{'id':'it','name':'Information Technology','code':'IT'}],
           'teachers':[],'subjects':[],'rooms':[],'groups':[],'offerings':[], 'elective_sets':[],
-          'batches':[], 'settings':{'start':'09:00','end':'17:45','spread_lectures':True}}
+          'batches':[], 'settings':{'start':'09:00','end':'17:45','spread_lectures':True,'classroom_run_length':2}}
     for i in range(7):
         data['rooms'].append({'id':f'cr{i+1}','name':f'IT-{301+i}','kind':'classroom','capacity':70,
                              'department_id':'it','eligible_years':[]})
     for i in range(6):
-        data['rooms'].append({'id':f'lab{i+1}','name':f'IT Shared Lab {i+1}','kind':'lab','capacity':20,
+        data['rooms'].append({'id':f'lab{i+1}','name':f'IT Shared Lab {i+1}','kind':'lab','capacity':60 if i in (2,5) else 20,
                              'department_id':'it','eligible_years':[]})
     for sem,subjects in CATALOG.items():
         data['elective_sets'].append({'id':f'es{sem}','name':f'Professional Electives – Semester {sem}',
@@ -49,11 +49,16 @@ def presentation_config():
                 data['offerings'].append({'id':f'{code}_{div}','group_id':f'it{sem}{div}','subject_id':code,
                     'teacher_id':tid,'lectures':lectures,'labs':0,'lab_room_id':None})
                 if labs:
-                    for batch in range(1,4):
-                        data['offerings'].append({'id':f'{code}_{div}_b{batch}','group_id':f'it{sem}{div}',
+                    batch=(1,2,4).index(index)+1
+                    data['offerings'].append({'id':f'{code}_{div}_b{batch}','group_id':f'it{sem}{div}',
                             'subject_id':code,'teacher_id':lab_teacher,'lectures':0,'labs':1,
                             'batch_id':f'it{sem}{div}{batch}','lab_room_id':f'lab{((sem//2+div_index)%2)*3+batch}'})
-        for div in 'ABC':
+        data['subjects'].append({'id':f'IT{sem}P','name':'Mini Project','code':f'IT{sem}P',
+            'department_id':'it','semester':sem,'course_type':'project','weekly_hours':4})
+        for div_index,div in enumerate('ABC'):
+            data['offerings'].append({'id':f'IT{sem}P_{div}','group_id':f'it{sem}{div}',
+                'subject_id':f'IT{sem}P','teacher_id':f'lt{sem}_{(1,2,4)[div_index]}',
+                'lectures':0,'labs':0,'projects':1,'project_hours':4,'lab_room_id':None})
             data['groups'].append({'id':f'it{sem}{div}','department_id':'it','semester':sem,'division':div,
                                    'strength':60,'room_id':None})
             for batch in range(1,4):

@@ -1,0 +1,40 @@
+UniSched - Datta Meghe College of Engineering, Airoli, Navi Mumbai
+
+WINDOWS QUICK START
+1. Extract this ZIP completely into a new folder.
+2. Install 64-bit Python 3.11 or 3.12 if needed.
+3. Open the extracted folder containing run.py.
+4. Double-click start_windows.bat and keep its window open.
+5. Open http://127.0.0.1:8000 in your browser.
+
+UPGRADING AN EXISTING INSTALLATION
+Stop the old server first. Keep the old folder as a backup.
+To keep saved timetables, copy its data folder into this new folder.
+Do not copy the old .venv folder.
+Existing academic data and saved versions are preserved.
+To load the updated example: Import data -> Preview IT reference data
+-> Replace academic data. Back up your current academic data first.
+
+WHAT IS INCLUDED
+- 7 shared classrooms and 6 labs for 9 divisions; 27 practical batches.
+- One simultaneous two-hour lab block per division per week, with
+  different teachers and rooms for A1/A2/A3 (and B/C batches).
+- Batches attend labs only; lectures and mini projects are division-wide.
+- Add mini project: Academic setup -> Assignments. Enter a supervisor,
+  sessions per week, and hours per session. The demo includes 4 hours/week.
+- Classroom continuity: choose 2 or 3 consecutive lecture periods when
+  generating. No-gap and collision rules remain mandatory.
+- Separate batch cards in All batches, and clearer PDF/Excel exports.
+- Manual edits, Draft, Approve, Lock, professor views, and saved history.
+- Timetable assistant: select all saved plans or one plan/session to
+  check classroom alternatives, conflicts, and faculty loads.
+
+OPENAI IS OPTIONAL
+Local assistant checks work without a key or internet connection.
+For OpenAI explanations, follow the server environment-variable setup
+in README.md. Do not put your API key in source files or share it.
+The assistant offers advice; it does not change timetables.
+
+The included CSV, Excel, and JSON files are in sample_data.
+The demo starts at 09:00 with recess 13:00-13:45 and no internal gaps.
+Data is illustrative, not the official college curriculum/faculty list.

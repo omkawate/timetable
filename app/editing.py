@@ -29,6 +29,7 @@ def edit_result(record, changes):
     result['parent_generation_id']=record['id']
     result['elapsed_seconds']=0
     result['summary']['balance_optimal']=False
+    result['summary']['classroom_optimization']={**audit['classroom_optimization'],'optimal':False}
     peak=max((row['periods'] for row in audit['student_days']),default=0)
     result['summary']['max_daily_periods']=peak
     result['summary']['max_daily_hours']=peak*config.settings.period_minutes/60

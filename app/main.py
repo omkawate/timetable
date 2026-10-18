@@ -22,6 +22,7 @@ from .analytics import analyze
 from .demo import presentation_config
 from .calendar import Settings
 from .editing import edit_result
+from . import assistant
 
 ROOT = Path(__file__).resolve().parent.parent
 generation_lock = Lock()
@@ -60,6 +61,7 @@ class GenerateRequest(BaseModel):
     group_ids: list[str] | None = Field(default=None, max_length=30)
     base_generation_id: int | None = Field(default=None, ge=1)
     continue_latest: bool = True
+    classroom_run_length: int | None = Field(default=None, ge=1, le=3, strict=True)
 
     @field_validator('name')
     @classmethod
@@ -67,6 +69,43 @@ class GenerateRequest(BaseModel):
         if any(ord(char) < 32 for char in value):
             raise ValueError('Timetable names cannot contain control characters or line breaks.')
         return value
+
+class AssistantRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1500)
+    generation_id: int | None = Field(default=None, ge=1)
+    entry_index: int | None = Field(default=None, ge=0)
+    mode: Literal['local','openai'] = 'local'
+
+@app.get('/api/assistant/status')
+def assistant_status():
+    return assistant.status()
+
+@app.post('/api/assistant/ask')
+def ask_assistant(payload: AssistantRequest):
+    if not payload.question.strip():
+        raise HTTPException(422,'Enter a timetable question.')
+    if payload.entry_index is not None and payload.generation_id is None:
+        raise HTTPException(422,'Select one timetable before selecting a session.')
+    if payload.generation_id is not None:
+        record=storage.get_generation(payload.generation_id)
+        if record is None: raise HTTPException(404,'Timetable not found.')
+        records=[record]
+    else:
+        records=[storage.get_generation(r['id']) for r in storage.generations()]
+    if not records:
+        raise HTTPException(422,'Generate or select a saved timetable first.')
+    try:
+        answer,facts=assistant.local_advice(records,payload.question,payload.entry_index)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+    response={'answer':answer,'local_answer':answer,'facts':facts,'mode':'local','online_error':None}
+    if payload.mode=='openai':
+        try:
+            response['answer']=assistant.explain_with_openai(payload.question,facts)
+            response['mode']='openai'
+        except ValueError as exc:
+            response['online_error']=str(exc)
+    return response
 
 @app.get('/api/health')
 def health():
@@ -131,6 +170,8 @@ def generate_timetable(payload: GenerateRequest):
     try:
         current = storage.get_config()
         config = Configuration(**current['configuration'])
+        if payload.classroom_run_length is not None:
+            config.settings.classroom_run_length = payload.classroom_run_length
         groups = [g for g in config.groups if (not payload.department_id or g.department_id == payload.department_id)
                   and (not payload.semester or g.semester == payload.semester)]
         if payload.group_ids is not None:
@@ -145,9 +186,12 @@ def generate_timetable(payload: GenerateRequest):
             if not base or base['result']['status'] != 'feasible' or base['config_revision'] != current['revision'] or base['config']['settings']!=config.settings.model_dump():
                 raise HTTPException(409,'The base timetable must be successful and use the current academic data. Generate a fresh complete plan after editing data.')
         elif payload.continue_latest:
-            match = next((r for r in storage.generations() if r['status']=='feasible' and r['config_revision']==current['revision'] and bool(r['spread_lectures'])==config.settings.spread_lectures),None)
-            if match:
-                base = storage.get_generation(match['id'])
+            for candidate in storage.generations():
+                if candidate['status']=='feasible' and candidate['config_revision']==current['revision']:
+                    saved=storage.get_generation(candidate['id'])
+                    if saved['config']['settings']==config.settings.model_dump():
+                        base=saved
+                        break
         result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [])
         result['scope']['base_generation_id'] = base['id'] if base else None
         identifier = storage.save_generation(payload.name.strip() or 'Timetable', current['revision'], config.model_dump(), result)

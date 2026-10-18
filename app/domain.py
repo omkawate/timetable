@@ -103,13 +103,14 @@ class Offering(Record):
     lab_room_id: str | None = None
     projects: int = Field(default=0, ge=0, le=20, strict=True)
     batch_id: str | None = None
+    project_hours: float | None = Field(default=None, ge=0.5, le=8, allow_inf_nan=False)
 
     @model_validator(mode='after')
     def nonempty(self):
         if self.lectures + self.labs + self.projects == 0:
             raise ValueError('An assignment needs at least one lecture, lab, or project per week.')
         if self.batch_id and self.lectures:
-            raise ValueError('Batch assignments are for labs/projects; assign lectures to the whole division.')
+            raise ValueError('Batches attend labs only; assign lectures to the whole division.')
         return self
 
 class Department(Record):
@@ -182,6 +183,12 @@ class Configuration(BaseModel):
             if group.room_id and (group.room_id not in rooms or rooms[group.room_id].kind != 'classroom'):
                 raise ValueError(f'Division {group.division} needs a valid classroom.')
         for item in self.offerings:
+            if self.settings.synchronized_batch_labs and item.batch_id and item.projects:
+                raise ValueError('Batches attend labs only. Assign mini projects to the whole division.')
+            if item.projects and item.project_hours is not None:
+                periods = item.project_hours * 60 / self.settings.period_minutes
+                if not periods.is_integer():
+                    raise ValueError('Mini-project hours must fit a whole number of teaching periods.')
             if item.group_id not in groups or item.subject_id not in subjects or item.teacher_id not in teachers:
                 raise ValueError(f'Assignment {item.id} references a missing division, subject, or teacher.')
             if groups[item.group_id].semester != subjects[item.subject_id].semester:

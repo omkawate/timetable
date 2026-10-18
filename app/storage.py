@@ -49,7 +49,9 @@ def get_config():
     if not row:
         return {'revision': 0, 'configuration': Configuration().model_dump()}
     # Add schema defaults in memory; never rewrite a user's old configuration on read.
-    return {'revision': row['revision'], 'configuration': Configuration(**json.loads(row['body'])).model_dump()}
+    snapshot = json.loads(row['body'])
+    snapshot.setdefault('settings', {}).setdefault('synchronized_batch_labs', False)
+    return {'revision': row['revision'], 'configuration': Configuration(**snapshot).model_dump()}
 
 class RevisionConflict(Exception):
     pass
@@ -81,6 +83,7 @@ def get_generation(identifier):
         return None
     snapshot=json.loads(row['config'])
     snapshot.setdefault('settings',{}).setdefault('spread_lectures',False)
+    snapshot['settings'].setdefault('synchronized_batch_labs',False)
     config = Configuration(**snapshot)
     return {**dict(row), 'config': config.model_dump(), 'result': json.loads(row['result']),
             'workflow':workflow, 'meta': {'college':COLLEGE, **config.settings.meta()}}
@@ -90,7 +93,9 @@ def generations():
         rows = db.execute('''SELECT id,name,created_at,config_revision,
             json_extract(result,'$.status') AS status,
             json_extract(result,'$.summary.teaching_hours') AS teaching_hours,
-            COALESCE(json_extract(config,'$.settings.spread_lectures'),0) AS spread_lectures
+            COALESCE(json_extract(config,'$.settings.spread_lectures'),0) AS spread_lectures,
+            COALESCE(json_extract(config,'$.settings.synchronized_batch_labs'),0) AS synchronized_batch_labs,
+            COALESCE(json_extract(config,'$.settings.classroom_run_length'),1) AS classroom_run_length
             FROM generations ORDER BY id DESC LIMIT 100''').fetchall()
         output=[{**dict(row),'workflow':_workflow(db,row['id'])} for row in rows]
     return output

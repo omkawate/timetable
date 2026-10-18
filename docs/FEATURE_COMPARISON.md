@@ -6,8 +6,8 @@ The existing UniSched purple website and SQLite data are retained. The supplied 
 | --- | --- |
 | Department selector and new departments | Header selector and Departments CRUD; department appears on timetables and exports. |
 | Generate scope: department, semester, all/A/B/C | Generate by division; buttons are built from actual divisions; preserves compatible prior divisions by default. |
-| Mini projects | Subject course type and project session count in assignments; configurable consecutive duration. |
-| Divisions, student strength, practical groups | Academic setup → Divisions / Lab batches; batch headcounts and student overlap enforced; Create three batches helper and a 27-batch demo with assigned practical teachers and labs. |
+| Mini projects | Assignments → Add mini project; whole-division supervisor, sessions/week, and hours/session. Editable, optional, and validated against break and capacity limits. |
+| Divisions, student strength, practical groups | Academic setup → Divisions / Lab batches; batch headcounts and student overlap enforced; Create three batches helper and a 27-batch demo. Each batch has exactly one lab per week; all three batches run together using distinct assigned teachers/labs. Lectures and projects are division-wide. |
 | Subject name/code, weekly hours, type, semester | Subjects & courses; explicit First/Second/Third/Final Year selection plus semester. |
 | Elective sets | Academic setup → Elective sets; subjects link to a set in the same department/semester. The user's separate-slot requirement takes precedence over the screenshot's parallel alternatives. |
 | Faculty name, email, daily/weekly limits, lab eligibility | Teachers and Faculty workload; every restriction is enforced in generation. |
@@ -21,10 +21,12 @@ The existing UniSched purple website and SQLite data are retained. The supplied 
 | Timetable health/student quality/room usage | Analytics & conflicts; transparent measured formulas, daily breakdown, faculty loads, room usage. |
 | College operating hours, period length, working days | College timings with period preview and validation. |
 | Lunch/additional breaks, blocked periods | College timings; excluded from teaching, gap calculations, and session windows. |
-| Lecture/lab/project session durations | College timings; shared by generation, display, analytics, and exports. |
+| Lecture/lab/project session durations | College timings defaults plus per-assignment project hours; shared by generation, display, analytics, and exports. |
 | Performance panel | Real Python process uptime/memory, API latency, generation timing/success, and recent runs. Refresh button updates measurements. |
-| AI Assistant label in screenshot header | No external AI integration. Existing solver reports and rule-based suggestions explain actual conflicts; no simulated chatbot or fabricated metrics. |
+| Timetable assistant | Select all saved plans or one plan/session. Local audited replacement-room advice and reasons; optional server-key OpenAI explanations, with offline fallback. Suggestions are read-only. |
 | Professor-specific blank grid | Timetables → By professor; all unassigned teaching cells stay blank. |
 | PDF/Excel with college name | Current division/professor and complete-plan exports; snapshot calendar retained. |
 
-The updated templates are illustrative IT data for presentation, not an official college curriculum. Separate practical batches can run in parallel; elective options still require separate slots.
+The updated templates are illustrative IT data for presentation, not an official college curriculum. Practical batches must share their single weekly lab block under the new default policy; elective options still require separate slots. Historical snapshots retain their original rules.
+
+The latest timetable screenshots also prompted separate, non-overlapping batch cards, clearer coloured PDF cards and Excel row sizing, and a 2/3-period classroom continuity preference. Room optimization keeps session times and mandatory rules fixed and reports unmet preferences.

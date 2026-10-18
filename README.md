@@ -2,7 +2,7 @@
 
 **Campus, in sync.** A working university timetable planner for **Datta Meghe College of Engineering, Airoli, Navi Mumbai**.
 
-UniSched includes a responsive website, a FastAPI backend, a SQLite database, a Google OR-Tools CP-SAT scheduler, and downloadable PDF and Excel timetables. The website has no JavaScript build step or external CDN dependency.
+UniSched includes a responsive website, a FastAPI backend, a SQLite database, a Google OR-Tools CP-SAT scheduler, and downloadable PDF and Excel timetables. The website has no JavaScript build step or external CDN dependency. Local timetable advice works offline; an optional OpenAI explanation mode can use a server-side API key.
 
 ## Run the project
 
@@ -112,15 +112,55 @@ The folder `sample_data` includes the same complete IT dataset in three formats:
 - [`it_presentation.xlsx`](sample_data/it_presentation.xlsx): separate worksheets for academic entities and settings.
 - [`it_presentation.json`](sample_data/it_presentation.json): full backup with stable identifiers.
 
-It contains **24 illustrative subjects, 33 teachers, 9 divisions, 27 practical batches, and 153 assignments**. The resources are **7 shared classrooms and 6 shared laboratories**, fewer classrooms than divisions. Each division has A1/A2/A3-style batches of 20 students, each explicitly assigned a laboratory and practical teacher for every lab subject. Each student attends **26 lecture hours + three 2-hour labs = 32 hours/week**. Faculty limits are 20 hours/week, with five daily periods for theory faculty and six for practical faculty. Classrooms have 70 seats; laboratories have 20 seats. Each division has 60 students.
+It contains **27 illustrative subjects, 33 teachers, 9 divisions, 27 practical batches, and 108 assignments**. The resources are **7 shared classrooms and 6 shared laboratories**, fewer classrooms than divisions. Each division has three 20-student batches: A1/A2/A3, B1/B2/B3, or C1/C2/C3. **Each batch has exactly one two-hour lab per week. All three labs run simultaneously in one common weekly block**, with distinct assigned teachers and laboratories. For example, Semester 3 Division A runs Data Structures for A1, DBMS for A2, and OOP for A3 in that block. Lectures and mini projects belong to the whole division.
 
-The former two labs offered only 80 room-periods/week, insufficient for 162 batch practical periods. Six shared labs let two divisions run their three practical batches concurrently, while seven classrooms serve the other divisions. No resource restriction is silently relaxed.
+Each student attends **26 lecture hours + one 2-hour lab + one 4-hour mini project = 32 hours/week**. Projects are explicit optional assignments: change their hours/sessions or remove the assignment to omit them. Faculty limits are 20 hours/week, with five daily periods for theory faculty and six for practical/project faculty. Classrooms have 70 seats; four laboratories have 20 seats and two have 60 seats so they can also host whole-division projects. Each division has 60 students. The solver shares these rooms across all nine divisions without relaxing capacity or collision rules.
 
-The calendar starts at **09:00**, with recess **13:00–13:45**, and permits teaching until **17:45**. The verified complete solution has **315 sessions / 396 faculty contact hours**, no internal student gaps, no audited conflicts, and a maximum of seven teaching periods per student day. Most days finish at 15:45–16:45; a shorter day is possible. The solver determines exact placements. Room-period utilization is **76.2%** across the thirteen rooms (396 / 520).
+The calendar starts at **09:00**, with recess **13:00–13:45**, and permits teaching until **17:45**. The verified complete solution has **270 sessions / 324 faculty contact hours**, no internal student gaps, no audited conflicts, and a maximum of seven teaching periods per student day. Most days finish at 15:45–16:45; a shorter day is possible. The solver determines exact placements. Room-period utilization is **62.3%** across the thirteen rooms (324 / 520). The all-batches view totals 36 faculty contact hours per division; an individual batch's student timetable totals 32 hours.
 
 This is presentation data, **not an official DMCE curriculum or faculty directory**. No filler sessions are invented. The original 22-hour/week dataset remains at [`unisched_semesters_3_5_7.csv`](sample_data/unisched_semesters_3_5_7.csv), and its 171-session / 198-hour generation remains regression-tested.
 
 See [the presentation walkthrough](docs/PRESENTATION.md) and [the screenshot feature comparison](docs/FEATURE_COMPARISON.md).
+
+## Mini projects and simultaneous batch labs
+
+- Open **Academic setup → Assignments → Add mini project**. Choose a division, subject name/code, supervisor, sessions per week, hours per session, and a suitable lab or Auto. An existing project subject code can be reused for another division in its semester. The selected laboratory must seat the whole division.
+- Use **Edit assignment** to change project hours/sessions or the supervisor. Remove a project-only assignment to omit the project. Hours must fit whole teaching periods and one unbroken window; a four-hour project fits 09:00–13:00 or 13:45–17:45, never across recess. Leaving hours blank uses the default project duration in College timings.
+- Create batches under **Lab batches**, then add one lab assignment per batch. Each batch needs a different teacher and an available lab at the common time. Batches attend labs only; all students attend division-wide lectures and mini projects.
+- When manually moving a practical block, move **all its batch rows** to the same new day/start before saving. Use **Edit entire plan** from a professor view to access the other batch rows. The backend checks synchronization alongside the existing no-gap, teacher, room, and count rules.
+- Existing installations keep their academic data and original scheduling policy. To use the new example, back up data and import **Preview IT reference data → Replace academic data**. For your own older dataset, update its assignments, then enable **One simultaneous weekly lab block for all batches** in College timings. Existing saved timetables and exports retain their original rules; regeneration creates a new Draft.
+
+## Classroom continuity and clearer timetables
+
+The generation dialog offers **Flexible**, **Prefer 2 consecutive lecture periods in one room**, or **Prefer 3**. College timings sets the default; the IT demo defaults to 2. Each saved version retains its chosen setting. Changing it selects a new compatible base or starts a fresh plan rather than mixing different settings.
+
+The scheduler first solves session times and mandatory constraints, then optimizes lecture rooms while keeping every day/time/teacher fixed. It minimizes early classroom changes, then total changes. Labs, mini projects, recess, and free periods reset a lecture run. This is a preference: fixed rooms, preserved divisions, capacity and eligibility always apply. The result reports actual changes, early changes, and whether the best room allocation was proven for those fixed session times. The verified nine-division example achieved zero consecutive-lecture classroom changes.
+
+In **All batches**, each practical now has a separate, naturally sized card with a bold batch label, teacher, subject, and room. Rows grow to fit all cards. PDF uses larger type and separated coloured cards; Excel uses wrapped text, taller rows, and repeating print headings. The standard all-batches division PDF fits one A3 landscape page; unusually dense or custom calendars can continue onto another page with repeated column headings. Single-batch/professor PDF views remain available.
+
+## Timetable assistant: local checks and optional OpenAI
+
+Open **Timetable assistant**, select one saved timetable or **All saved timetables (latest 100)**, and enter a question. For a replacement-room check, select the particular session. Local mode checks the full saved plan: room type, seats, department/year eligibility, fixed-room restrictions, overlapping bookings, and a complete audit after each proposed replacement. It explains why rooms work or are ruled out, and shows any impact on classroom continuity. All saved versions are treated separately, not as simultaneous bookings.
+
+Advice never modifies schedules. Apply a chosen room through **Edit timetable manually** on an unlocked Draft; validation runs again. Local mode supports summaries, conflicts, teaching loads, and room alternatives. It does not pretend to be an online language model.
+
+To enable optional conversational explanations, set an OpenAI API key **on the computer running UniSched**, then start the server. In Windows Command Prompt, from the project folder:
+
+```bat
+set "UNISCHED_OPENAI_API_KEY=your-api-key"
+set "UNISCHED_OPENAI_MODEL=gpt-4.1-mini"
+start_windows.bat
+```
+
+On macOS/Linux:
+
+```bash
+export UNISCHED_OPENAI_API_KEY='your-api-key'
+export UNISCHED_OPENAI_MODEL='gpt-4.1-mini'
+.venv/bin/python run.py
+```
+
+Choose **OpenAI explanation + local checks** in the assistant. The model name is configurable; use one enabled for your OpenAI API account. API use may incur charges. The key stays on the server and is never stored in SQLite or returned to the browser. This mode sends the question and selected plans' audited facts and, for a single selected plan, its session list, including faculty and room names, to the OpenAI Responses API with `store: false`. It provides wording and explanations; verified local checks remain expandable underneath. If the key/service is unavailable, the assistant displays the local answer with a clear explanation. Large selections may need one timetable selected for online mode. The adapter is covered by mocked API tests; no live paid request is required to run the project or its tests.
 
 ## Scheduling rules
 
@@ -133,10 +173,10 @@ The solver uses **Google OR-Tools CP-SAT**. Mandatory session choices and resour
 | Resource collisions | A teacher or room cannot be double-booked across departments or divisions in the same plan. |
 | Room selection | Fixed classroom/lab or automatic allocation among rooms matching capacity, department, and academic year. Empty room year eligibility means all years; no department means shared college room. |
 | Sessions | Exact lecture, lab, and project counts. Multi-period sessions stay consecutive in real time and never cross breaks, blocks, or the end of the day. |
-| Batches | Whole-division teaching occupies every batch. Separate batches can attend different practical sessions simultaneously when faculty and rooms permit. Unassigned remaining students form an additional student unit. |
+| Batches | With the new default policy, batches cover the whole division and each has exactly one weekly lab. All batches share the same day, starting period, and duration, using distinct teachers and rooms. Batch lectures/projects are rejected. Whole-division lectures/projects occupy every batch. Historical versions retain their original policy. |
 | Electives | Separate slots across the same department and semester, including its divisions. Elective sets organize related courses; they do **not** make alternatives run simultaneously. |
 | Lecture distribution | Enabled by default: each subject with 3–4 weekly lectures uses different days. The daily limit is ceil(weekly lectures / working days). A fresh solver seed varies placements while keeping all constraints; this is not an unconstrained random shuffle. Existing snapshots keep their original policy. |
-| Balance | Minimize the largest student daily teaching load; report whether optimality was proven. No requirements are silently relaxed. |
+| Balance | Minimize the largest student daily teaching load; report whether optimality was proven. Optional second-stage room optimization preserves all session times and hard constraints. No requirements are silently relaxed. |
 
 Preflight checks explain excess workload, insufficient room capacity/eligibility, missing assignments, unavailable lab windows, and other obvious problems. CP-SAT checks the combination. When proven infeasible, a diagnostic search identifies a sufficient conflicting set where possible; it need not be minimal. Suggestions are **not applied automatically**. A search timeout is reported as **Search limit**, never proof of impossibility.
 
@@ -146,7 +186,7 @@ Analytics independently reconstructs occupancy, exact session counts, session du
 
 Imports accept UTF-8 CSV, `.xlsx`, or JSON up to 1 MB. They preview the configuration and basic issues before an explicit replacement. JSON and Excel preserve unassigned records and identifiers; use them for full backups. Excel imports require the named worksheets from the supplied template and literal cell values rather than formulas.
 
-The extended CSV uses the original thirteen assignment columns plus department, strength, faculty daily limit/contact details/eligibility, project count, batch, elective set, course type, and default hours. Its first row includes room pools, department metadata, and calendar settings as JSON. Those cells preserve shared-room eligibility; retain them when editing the file in Excel. **CSV exports represent assigned records** and recreate assignment/student/subject identifiers on import; use full JSON/Excel to preserve every record.
+The extended CSV uses the original thirteen assignment columns plus department, strength, faculty daily limit/contact details/eligibility, project count and hours per session, batch, elective set, course type, and default hours. Its first row includes room pools, department metadata, and calendar settings as JSON. Those cells preserve shared-room eligibility; retain them when editing the file in Excel. **CSV exports represent assigned records** and recreate assignment/student/subject identifiers on import; use full JSON/Excel to preserve every record.
 
 The original 13-column CSV is still supported:
 
@@ -202,7 +242,7 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe`. Browser 
 
 ## Further additions
 
-Useful next steps are coordinator/faculty login with role-based approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator; there is no external AI service or automatic email messaging. Authentication and HTTPS would be needed before public deployment.
+Useful next steps are coordinator/faculty login with role-based approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator. OpenAI explanations are optional; automatic email messaging is not included. Authentication and HTTPS would be needed before public deployment.
 
 ## Reusable cloud workflow
 

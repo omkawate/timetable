@@ -5,7 +5,8 @@ import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
 from .domain import Configuration, minutes
-from .resources import student_units, affected_units, session_specs, teaching_slots, eligible_rooms
+from .classrooms import classroom_metrics, optimize_classrooms
+from .resources import student_units, affected_units, session_specs, teaching_slots, eligible_rooms, batch_lab_problems
 
 
 def issue(code, problem, suggestion):
@@ -20,7 +21,9 @@ def preflight(config: Configuration):
     periods = settings.periods()
     weekly_slots = sum(len(settings.available(day)) for day in range(len(settings.days)))
     hour = settings.period_minutes/60
-    problems = []
+    problems = [issue('BATCH_LAB_BLOCK', problem,
+        'Assign exactly one weekly lab to every batch, with different teachers and enough eligible rooms. All batches attend together; lectures and mini projects belong to the whole division.')
+        for problem in batch_lab_problems(config)]
     teacher_slots, unit_slots, room_slots, elective_slots = (defaultdict(int) for _ in range(4))
     subjects = {s.id:s for s in config.subjects}
     groups = {g.id:g for g in config.groups}
@@ -56,7 +59,7 @@ def preflight(config: Configuration):
             if not possible:
                 problems.append(issue('LAB_AVAILABILITY' if kind != 'lecture' else 'TEACHER_AVAILABILITY',
                     f'{teacher.name} has no {duration*settings.period_minutes}-minute unbroken window for {subject.code} ({kind}).',
-                    'Extend teacher availability, change the session duration in College timings, or reassign the session. Breaks cannot be crossed.'))
+                    'Extend teacher availability, adjust mini-project hours in the assignment or default session lengths in College timings, or reassign the session. Breaks cannot be crossed.'))
     for teacher in config.teachers:
         slots = teacher_slots[teacher.id]
         available = sum(min(teacher.max_daily_slots, sum(minutes(periods[p][0]) >= minutes(teacher.arrival)
@@ -123,6 +126,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
     coverage = defaultdict(list)
     candidates, assumptions = [], {}
     choice_by_key = {}
+    batch_starts = defaultdict(list)
 
     def assumption(name, diagnostic):
         literal = model.NewBoolVar(name)
@@ -151,6 +155,8 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                     for room in rooms:
                         var = model.NewBoolVar(f'{item.id}_{kind}_{day}_{slot}_{room.id}')
                         choices.append(var)
+                        if kind == 'lab' and item.batch_id:
+                            batch_starts[item.batch_id,day,slot].append(var)
                         daily_choices[day].append(var)
                         entry = {'offering_id':item.id,'group_id':group.id,'subject_id':subject.id,'teacher_id':teacher.id,
                                  'room_id':room.id,'day':day,'slot':slot,'duration':duration,'kind':kind,'batch_id':item.batch_id}
@@ -168,6 +174,20 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                     'Provide teacher availability on more days, adjust locked sessions, or review lecture requirements.'))
                 for variables in daily_choices.values():
                     model.Add(sum(variables)<=math.ceil(count/len(days))).OnlyEnforceIf(spread)
+
+    if settings.synchronized_batch_labs:
+        for group in selected.groups:
+            batches = [b for b in selected.batches if b.group_id == group.id]
+            if not batches:
+                continue
+            synchronized = assumption('batch_block_'+group.id, issue('BATCH_LAB_BLOCK',
+                f'Semester {group.semester}, Division {group.division}: all batch labs need one common weekly block.',
+                'Provide a shared unbroken window with a different available teacher and laboratory for each batch.'))
+            for day in range(len(days)):
+                for slot in range(len(periods)):
+                    anchor = sum(batch_starts[batches[0].id,day,slot])
+                    for batch in batches[1:]:
+                        model.Add(sum(batch_starts[batch.id,day,slot]) == anchor).OnlyEnforceIf(synchronized)
 
     for entry in locked:
         key = (entry['offering_id'],entry['kind'],entry['day'],entry['slot'],entry['room_id'])
@@ -217,7 +237,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         model.Add(model.GetBoolVarFromProtoIndex(index) == 1)
     model.Add(peak >= lower_bound)
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = max(0.000001,time_limit-(time.monotonic()-started))
+    solver.parameters.max_time_in_seconds = max(0.000001,time_limit*(.8 if settings.classroom_run_length>1 else 1)-(time.monotonic()-started))
     solver.parameters.num_search_workers = 4
     solver.parameters.random_seed = random_seed if random_seed is not None else secrets.randbelow(2**30)
     result = solver.Solve(model)
@@ -237,9 +257,12 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         return failed('timeout',[issue('SEARCH_LIMIT','The search limit was reached without a complete timetable. This does not prove generation is impossible.',
                                       'Use a longer search limit, schedule connected divisions together, or reduce contention for shared rooms.')])
     entries = sorted([entry for var,entry in candidates if solver.BooleanValue(var)],key=lambda e:(e['group_id'],e['day'],e['slot'],e['room_id']))
+    entries,room_optimal = optimize_classrooms(selected,entries,locked,max(.01,time_limit-(time.monotonic()-started)))
     hours = sum(e['duration']*settings.period_minutes/60 for e in entries)
+    room_quality = classroom_metrics(selected, entries)
     return {'status':'feasible','entries':entries,'issues':[],'scope':scope,'elapsed_seconds':round(time.monotonic()-started,3),
             'solutions':[
+                'Scheduled one simultaneous weekly practical block for every division with batches; lectures and mini projects remain division-wide.' if settings.synchronized_batch_labs else 'Retained this version’s original batch scheduling policy.',
                 'Placed every requested lecture, lab, and project in the selected plan without teacher, student, or room collisions.',
                 f'Kept student days consecutive from {settings.start}, excluding configured breaks and blocked periods. Days may finish early.',
                 'Assigned only rooms with sufficient seats and matching department/year eligibility. Shared rooms are allocated dynamically when Auto is selected.',
@@ -247,7 +270,9 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                 'Respected teacher coming/leaving times, daily and weekly limits, and lab/project eligibility. Sessions never cross breaks.',
                 f'Preserved {len(locked)} sessions outside the selected divisions from the base timetable.' if locked else 'Created a fresh plan for the selected scope.',
                 'Spread each subject’s lectures across working days; subjects with up to one lecture per working day never repeat on the same day.' if settings.spread_lectures else 'Used the saved lecture-distribution policy.',
+                f'Classroom preference: {settings.classroom_run_length} consecutive lecture periods; {room_quality["classroom_changes"]} changes, including {room_quality["early_changes"]} before the preferred run length. This is a soft preference; hard constraints remain enforced.' if settings.classroom_run_length>1 else 'Classroom continuity optimization was not requested.',
                 f'Limited the longest student day to {solver.Value(peak)} teaching periods.'
             ],'summary':{'sessions':len(entries),'teaching_hours':hours,'divisions':len(selected.groups),
                           'teachers':len({e['teacher_id'] for e in entries}),'max_daily_hours':solver.Value(peak)*settings.period_minutes/60,
-                          'max_daily_periods':solver.Value(peak),'balance_optimal':result == cp_model.OPTIMAL,'algorithm':'Google OR-Tools CP-SAT'}}
+                          'max_daily_periods':solver.Value(peak),'balance_optimal':result == cp_model.OPTIMAL or solver.Value(peak)==lower_bound,
+                          'classroom_optimization':{**room_quality,'optimal':room_optimal},'algorithm':'Google OR-Tools CP-SAT'}}

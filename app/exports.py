@@ -59,8 +59,9 @@ def views(generation, view='group', target=None, batch=None):
                     subject,group=maps['subjects'][e['subject_id']],maps['groups'][e['group_id']]
                     kind=e['kind'].upper()+(' · ELECTIVE' if subject['elective'] else '')
                     who=maps['teachers'][e['teacher_id']]['name'] if view=='group' else f"{maps['departments'][group['department_id']]['code']} · Sem {group['semester']} · Div {group['division']}"
-                    batch_label=' · '+maps['batches'][e['batch_id']]['name'] if e.get('batch_id') else ''
-                    texts.append(f"{subject['code']} · {kind}\n{subject['name']}\n{who}{batch_label}\n{maps['rooms'][e['room_id']]['name']}")
+                    batch_label='Batch '+maps['batches'][e['batch_id']]['name']+' | ' if e.get('batch_id') else ''
+                    duration=f" · {e['duration']*settings.period_minutes/60:g}h" if e['duration']>1 else ''
+                    texts.append(f"{batch_label}{subject['code']} · {kind}{duration}\n{subject['name']}\n{who}\nRoom: {maps['rooms'][e['room_id']]['name']}")
                 cells.append('\n—\n'.join(texts))
             grid.append(cells)
         output.append((title,grid,sum(e['duration']*settings.period_minutes/60 for e in selected)))
@@ -97,16 +98,17 @@ def excel(generation,view='group',target=None,batch=None):
                 cell.font=Font(name='Calibri',size=10,color='FFFFFF' if r==5 else '252645',bold=r==5 or c==1)
                 cell.fill=PatternFill('solid',fgColor='5046D6' if r==5 else 'F0EEFF' if pause else 'F6F7FB')
                 cell.border=Border(bottom=Side(style='thin',color='DFE2EB'))
-            sheet.row_dimensions[r].height=25 if r==5 or pause else max(78,max(value.count('\n') for value in values)*13+20)
+            sheet.row_dimensions[r].height=25 if r==5 or pause else min(409,max(92,max(value.count('\n') for value in values)*15+28))
         sheet.column_dimensions['A'].width=19
         for c in range(2,columns+1):
-            sheet.column_dimensions[get_column_letter(c)].width=32
+            sheet.column_dimensions[get_column_letter(c)].width=38
         sheet.freeze_panes='B6'
         sheet.sheet_view.showGridLines=False
         sheet.page_setup.orientation='landscape'
         sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
         sheet.page_setup.fitToWidth=1
-        sheet.page_setup.fitToHeight=1
+        sheet.page_setup.fitToHeight=0
+        sheet.print_title_rows='1:5'
         sheet.sheet_properties.pageSetUpPr.fitToPage=True
         sheet.print_options.horizontalCentered=True
         sheet.print_area=f'A1:{last}{len(grid)+4}'
@@ -122,7 +124,8 @@ def pdf(generation,view='group',target=None,batch=None):
     document=SimpleDocTemplate(output,pagesize=landscape(A3 if large else A4),leftMargin=24,rightMargin=24,topMargin=20,bottomMargin=20,title='UniSched timetable',author=COLLEGE)
     heading=ParagraphStyle('heading',fontName='Helvetica-Bold',fontSize=13,leading=17,textColor=colors.HexColor('#252645'),alignment=TA_CENTER)
     subheading=ParagraphStyle('subheading',fontName='Helvetica',fontSize=9,leading=13,alignment=TA_CENTER)
-    cellstyle=ParagraphStyle('cell',fontName='Helvetica',fontSize=6.2 if large else 6.8,leading=6.8 if large else 8.2,alignment=TA_CENTER)
+    cellstyle=ParagraphStyle('cell',fontName='Helvetica',fontSize=8.5 if large else 8,leading=10 if large else 9.5,alignment=TA_CENTER)
+    cardstyle=ParagraphStyle('card',parent=cellstyle,borderPadding=4,spaceAfter=0)
     headerstyle=ParagraphStyle('header',parent=cellstyle,fontName='Helvetica-Bold',textColor=colors.white)
     story=[]
     settings=Configuration(**generation['config']).settings
@@ -132,18 +135,29 @@ def pdf(generation,view='group',target=None,batch=None):
             story.append(PageBreak())
         story += [Paragraph(escape(COLLEGE),heading),Spacer(1,5),Paragraph(escape(f"UniSched | {title} | {generation['name']} | {workflow_label(generation)}"),subheading),
                   Paragraph(escape(f"{hours:g} scheduled teaching hours/week · {settings.start}–{settings.end}"),subheading),Spacer(1,10)]
-        table=Table([[Paragraph(escape(value).replace('\n','<br/>'),headerstyle if r==0 else cellstyle) for value in row] for r,row in enumerate(grid)],
-                    colWidths=[74]+[(document.width-74)/(len(grid[0])-1)]*(len(grid[0])-1),repeatRows=1)
+        def formatted(value, r, c):
+            if r==0 or c==0 or value in break_names or not value or value.startswith('BLOCKED'):
+                return Paragraph(escape(value).replace('\n','<br/>'),headerstyle if r==0 else cellstyle)
+            cards=[]
+            for text in value.split('\n—\n'):
+                lines=text.split('\n')
+                shade='#FFF3E3' if 'ELECTIVE' in lines[0] else '#E8F3EE' if ('LAB' in lines[0] or 'PROJECT' in lines[0]) else '#EFECFA'
+                style=ParagraphStyle('session',parent=cardstyle,backColor=colors.HexColor(shade),borderColor=colors.HexColor('#C9D2DE'),borderWidth=.4)
+                if cards: cards.append(Spacer(1,6))
+                cards.append(Paragraph('<b>'+escape(lines[0])+'</b><br/>'+ '<br/>'.join(escape(line) for line in lines[1:]),style))
+            return cards
+        table=Table([[formatted(value,r,c) for c,value in enumerate(row)] for r,row in enumerate(grid)],
+                    colWidths=[74]+[(document.width-74)/(len(grid[0])-1)]*(len(grid[0])-1),repeatRows=1,splitInRow=1)
         commands=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#5046D6')),
                   ('BACKGROUND',(0,1),(-1,-1),colors.HexColor('#F7F8FC')),
                   ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('GRID',(0,0),(-1,-1),.4,colors.HexColor('#DDE0E9')),
                   ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
-                  ('TOPPADDING',(0,0),(-1,-1),2 if large else 7),('BOTTOMPADDING',(0,0),(-1,-1),2 if large else 7)]
+                  ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]
         for r,row in enumerate(grid[1:],1):
             if all(value in break_names for value in row[1:]):
                 commands.append(('BACKGROUND',(0,r),(-1,r),colors.HexColor('#EDEBFF')))
         table.setStyle(TableStyle(commands))
-        story += [table,Spacer(1,7),Paragraph('Empty cells indicate no scheduled teaching. Multi-period sessions repeat across their occupied periods. Batch sessions are identified by name.',subheading)]
+        story += [table,Spacer(1,7),Paragraph('Each coloured card is one session. Batch labels identify simultaneous practicals; lectures/projects are division-wide. Multi-period sessions repeat in each occupied period. Empty cells mean no teaching.',subheading)]
     def footer(canvas,doc):
         canvas.saveState()
         canvas.setFont('Helvetica',6)
