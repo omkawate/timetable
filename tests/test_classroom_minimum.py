@@ -47,6 +47,7 @@ def test_joint_rescheduling_repairs_a_room_only_seed(monkeypatch):
             pair[0]['room_id']='r';pair[1]['room_id']='r2'
             return seed,False
         return original_optimizer(c,entries,locked,budget)
+    monkeypatch.setattr(scheduler,'interchangeable_classrooms',lambda *_:None)
     monkeypatch.setattr(scheduler,'optimize_classrooms',room_phase)
     result=scheduler.generate(config,20,random_seed=42)
     assert result['status']=='feasible',result

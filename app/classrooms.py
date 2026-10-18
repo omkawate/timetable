@@ -133,3 +133,56 @@ def require_classroom_runs(model, config, candidates, target_groups, enabled):
                     model.Add(run==1).OnlyEnforceIf([active,same.Not()])
                     model.Add(previous_run>=preferred).OnlyEnforceIf([enabled,active,previous_active,same.Not()])
                 previous_room,previous_run,previous_active=room,run,active
+
+
+def interchangeable_classrooms(config, locked_entries):
+    """Pool only lecture rooms with exactly identical eligibility and no other use."""
+    from .resources import eligible_rooms, session_specs
+    pool=None
+    for offering in config.offerings:
+        if offering.lectures:
+            eligible=eligible_rooms(config,offering,'lecture')
+            ids={r.id for r in eligible}
+            if len(ids)<2 or pool is not None and ids!={r.id for r in pool}:
+                return None
+            pool=eligible
+    if not pool:
+        return None
+    ids={r.id for r in pool}
+    if any(e['room_id'] in ids for e in locked_entries):
+        return None
+    for offering in config.offerings:
+        for kind,count,_ in session_specs(config,offering):
+            if kind!='lecture' and count and ids.intersection(r.id for r in eligible_rooms(config,offering,kind)):
+                return None
+    return pool
+
+
+def allocate_classroom_blocks(config, entries, pool):
+    """Color continuous lecture intervals; pool capacity guarantees enough rooms.
+
+    Each complete lecture block keeps one room. Earliest-start interval coloring
+    needs no more rooms than the maximum simultaneous lecture count.
+    """
+    from copy import deepcopy
+    updated=deepcopy(entries);by_group=defaultdict(list);blocks=defaultdict(list)
+    periods=config.settings.periods()
+    for e in updated:
+        if e['kind']=='lecture':
+            by_group[e['group_id'],e['day']].append(e)
+    for (group,day),lectures in by_group.items():
+        current=[];end=None
+        for e in sorted(lectures,key=lambda e:e['slot']):
+            if current and (e['slot']!=end or periods[end-1][1]!=periods[e['slot']][0]):
+                blocks[day].append(current);current=[]
+            current.append(e);end=e['slot']+e['duration']
+        if current: blocks[day].append(current)
+    for day,items in blocks.items():
+        free_at={r.id:0 for r in pool}
+        for block in sorted(items,key=lambda b:(b[0]['slot'],b[0]['group_id'])):
+            room=next((r.id for r in pool if free_at[r.id]<=block[0]['slot']),None)
+            if room is None:
+                raise ValueError('Lecture-room pool capacity was exceeded.')
+            for e in block: e['room_id']=room
+            free_at[room]=block[-1]['slot']+block[-1]['duration']
+    return updated

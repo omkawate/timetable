@@ -22,3 +22,14 @@ Projects are created only through an explicit save. You choose their hours, supe
 The assistant is read-only. Local checks inspect saved plans and audit proposed replacement rooms against capacity, eligibility, and bookings. Historical timetables are evaluated separately. Optional OpenAI mode explains those facts; setup and data-sharing details are in README.md.
 
 See START_HERE.txt for Windows startup and carrying your existing data folder into this update.
+
+
+## Latest limited update: timeout and deletion
+
+- Avoid repeating a full search when a saved timetable still satisfies the current configuration. Revalidate it and save a new Draft; keep the old version intact.
+- Reduce interchangeable classroom choices in the time solver to a capacity pool, then assign real rooms to complete lecture blocks. Use this only when all lecture-room eligibility sets match and the pool has no other uses or preserved bookings. Keep the general solver for other configurations.
+- Add Delete timetable controls on the timetable screen and version history. Require a confirmation, respect lock/approval states, and check the workflow revision to prevent deletion after a concurrent status change. Failed reports can also be deleted. Remove only the chosen version and its workflow, without cascading to later independent snapshots.
+
+The original nine-division dataset completed three fresh test runs in approximately 6–10 seconds with no audited clashes, gaps, or early classroom changes. Revalidation of those saved placements took approximately 0.04 seconds in the test environment. Timings depend on the machine and configuration; the search still reports genuine constraint failures and distinguishes them from a timeout.
+
+Academic data, mini projects, chatbot behavior, manual editing, batch layout, and export formatting are unchanged by this update.

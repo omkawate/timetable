@@ -228,3 +228,11 @@ start_windows.bat
 ```
 
 Select **OpenAI explanation + local checks** in AI Chat. The key stays on the server. Online mode sends your question and the selected timetable facts (including faculty and room names) to OpenAI. Model access and API usage depend on your account. If the key or service is unavailable, verified local checks remain available. Automated tests mock the online response; no paid API call is required for setup.
+
+## Regeneration and deleting saved timetables
+
+The three-lecture classroom rule is retained. When all automatic lecture rooms have identical eligibility and no laboratory/project or preserved booking uses those rooms, the time solver counts the available classrooms as a shared pool. It then assigns one real room to each continuous lecture block. Fixed rooms, different room eligibility, and reserved rooms use the general solver.
+
+Generating again first validates compatible saved placements against the current academic data and all constraints. If they still fit, it saves a new Draft instead of repeating the search. This can keep the same placements; the result report says when they were reused. Uncheck **Preserve other divisions from the latest compatible plan** for a fresh search. Changed academic data is never silently replaced with an old timetable.
+
+**Delete timetable** is available beside the saved-timetable selector and in Version history, including for timeout/infeasible reports. Confirm the selected version to delete it. Locked versions must be unlocked; approved versions must be marked Draft first. Deletion removes only that version and its workflow record; academic data and other snapshots remain intact. There is no undo.

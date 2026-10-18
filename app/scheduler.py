@@ -5,7 +5,8 @@ import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
 from .domain import Configuration, minutes
-from .classrooms import classroom_metrics, optimize_classrooms, require_classroom_runs
+from .classrooms import (classroom_metrics, optimize_classrooms, require_classroom_runs,
+                         interchangeable_classrooms, allocate_classroom_blocks)
 from .resources import student_units, affected_units, session_specs, teaching_slots, eligible_rooms
 
 
@@ -91,7 +92,7 @@ def preflight(config: Configuration):
     return problems
 
 
-def generate(config: Configuration, time_limit=20, target_group_ids=None, locked_entries=None, random_seed=None):
+def generate(config: Configuration, time_limit=20, target_group_ids=None, locked_entries=None, random_seed=None, initial_entries=None):
     started = time.monotonic()
     all_groups = {g.id:g for g in config.groups}
     targets = set(target_group_ids if target_group_ids is not None else all_groups)
@@ -117,6 +118,48 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         return failed('infeasible',problems)
     settings = config.settings
     periods, days = settings.periods(), settings.days
+    def success(entries,room_optimal,peak_value,balance_optimal,reused=False):
+        room_quality=classroom_metrics(selected,entries)
+        hours = sum(e['duration']*settings.period_minutes/60 for e in entries)
+        return {'status':'feasible','entries':entries,'issues':[],'scope':scope,'elapsed_seconds':round(time.monotonic()-started,3),
+                'solutions':[
+                    'Revalidated compatible saved placements and saved them as a new draft.' if reused else 'Placed every requested lecture, lab, and project in the selected plan without teacher, student, or room collisions.',
+                    f'Kept student days consecutive from {settings.start}, excluding configured breaks and blocked periods. Days may finish early.',
+                    'Assigned only rooms with sufficient seats and matching department/year eligibility. Shared rooms are allocated dynamically when Auto is selected.',
+                    'Reserved separate elective periods within each department and semester, including across divisions.',
+                    'Respected teacher coming/leaving times, daily and weekly limits, and lab/project eligibility. Sessions never cross breaks.',
+                    f'Preserved {len(locked)} sessions outside the selected divisions from the base timetable.' if locked else 'Created a fresh plan for the selected scope.',
+                    'Spread each subject’s lectures across working days; subjects with up to one lecture per working day never repeat on the same day.' if settings.spread_lectures else 'Used the saved lecture-distribution policy.',
+                    f'Classroom preference: {settings.classroom_run_length} consecutive lecture periods; {room_quality["classroom_changes"]} changes, including {room_quality["early_changes"]} before the preferred run length. Mandatory constraints remain enforced.' if settings.classroom_run_length>1 else 'Classroom continuity optimization was not requested.',
+                    f'Limited the longest student day to {peak_value} teaching periods.'
+                ],'summary':{'sessions':len(entries),'teaching_hours':hours,'divisions':len(selected.groups),
+                              'teachers':len({e['teacher_id'] for e in entries}),'reused_placements':reused,'max_daily_hours':peak_value*settings.period_minutes/60,
+                              'max_daily_periods':peak_value,'balance_optimal':balance_optimal,
+                              'classroom_optimization':{**room_quality,'optimal':room_optimal,'minimum_run_enforced':settings.classroom_run_length>=3,'enforced_group_ids':sorted(targets) if settings.classroom_run_length>=3 else []},'algorithm':'Google OR-Tools CP-SAT'}}
+
+    # A compatible saved plan is a validated starting solution, not a reason to
+    # repeat an expensive search. Old records and academic data are not edited.
+    if initial_entries:
+        from .analytics import analyze
+        seed=[dict(e) for e in initial_entries if e['group_id'] in targets]+[dict(e) for e in locked]
+        expected={o.group_id for o in selected.offerings}
+        try:
+            audit=analyze({'config':selected.model_dump(),'result':{'status':'feasible','entries':seed}})
+            valid={e['group_id'] for e in seed}==expected and not audit['hard_conflicts']
+        except (KeyError,IndexError,TypeError,ValueError):
+            valid=False
+        if valid:
+            quality=classroom_metrics(selected,seed)
+            if settings.classroom_run_length>=3 and any(c['group_id'] in targets and c['shortfall'] for c in quality['changes']):
+                seed,_=optimize_classrooms(selected,seed,locked,min(3,max(.001,time_limit*.1)))
+                quality=classroom_metrics(selected,seed)
+            if settings.classroom_run_length<3 or not any(c['group_id'] in targets and c['shortfall'] for c in quality['changes']):
+                peak_value=max((d['periods'] for d in audit['student_days']),default=0)
+                loads=defaultdict(int)
+                for d in audit['student_days']: loads[d['group_id'],d['batch']]+=d['periods']
+                lower=max((math.ceil(n/len(days)) for n in loads.values()),default=0)
+                return success(seed,quality['classroom_changes']==0,peak_value,peak_value==lower,True)
+    shared_rooms=interchangeable_classrooms(selected,locked) if settings.classroom_run_length>=3 else None
     model = cp_model.CpModel()
     teachers = {x.id:x for x in selected.teachers}
     subjects = {x.id:x for x in selected.subjects}
@@ -142,7 +185,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                 continue
             choices = []
             daily_choices = defaultdict(list)
-            rooms = eligible_rooms(selected,item,kind)
+            rooms = shared_rooms[:1] if shared_rooms and kind=='lecture' else eligible_rooms(selected,item,kind)
             for day in range(len(days)):
                 for slot in range(len(periods)):
                     if not settings.fits(day,slot,duration):
@@ -179,7 +222,8 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
 
     for (resource,key,day,slot),variables in coverage.items():
         if resource != 'elective':
-            model.Add(sum(variables) <= 1)
+            capacity=len(shared_rooms) if shared_rooms and resource=='room' and key==shared_rooms[0].id else 1
+            model.Add(sum(variables) <= capacity)
     for department,semester in {(s.department_id,s.semester) for s in selected.subjects if s.elective}:
         separate = assumption(f'elective_{department}_{semester}',issue('SEPARATE_ELECTIVES',
             f'{department}, semester {semester}: every elective session requires a separate slot across divisions.',
@@ -217,6 +261,11 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
     for index in assumptions:
         model.Add(model.GetBoolVarFromProtoIndex(index) == 1)
     model.Add(peak >= lower_bound)
+    if initial_entries:
+        for entry in initial_entries:
+            room=shared_rooms[0].id if shared_rooms and entry['kind']=='lecture' else entry['room_id']
+            var=choice_by_key.get((entry['offering_id'],entry['kind'],entry['day'],entry['slot'],room))
+            if var is not None: model.AddHint(var,1)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.000001,time_limit*(.8 if settings.classroom_run_length>1 else 1)-(time.monotonic()-started))
     solver.parameters.num_search_workers = 4
@@ -241,7 +290,11 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
     room_budget=max(.01,time_limit-(time.monotonic()-started))
     if settings.classroom_run_length>=3:
         room_budget=min(room_budget,max(.01,time_limit*.1))
-    entries,room_optimal=optimize_classrooms(selected,entries,locked,room_budget)
+    if shared_rooms:
+        entries=allocate_classroom_blocks(selected,entries,shared_rooms)
+        room_optimal=True
+    else:
+        entries,room_optimal=optimize_classrooms(selected,entries,locked,room_budget)
     room_quality=classroom_metrics(selected,entries)
     early_target_changes=[c for c in room_quality['changes'] if c['group_id'] in targets and c['shortfall']>0]
     if settings.classroom_run_length>=3 and early_target_changes:
@@ -250,6 +303,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         continuity=model.NewBoolVar('require_three_lecture_room_stay')
         model.Add(continuity==1)
         require_classroom_runs(model,selected,candidates,targets,continuity)
+        model.ClearHints()
         used={(e['offering_id'],e['kind'],e['day'],e['slot'],e['room_id']) for e in entries}
         for var,e in candidates:
             model.AddHint(var,int((e['offering_id'],e['kind'],e['day'],e['slot'],e['room_id']) in used))
@@ -266,19 +320,4 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         entries=sorted([entry for var,entry in candidates if solver.BooleanValue(var)],key=lambda e:(e['group_id'],e['day'],e['slot'],e['room_id']))
         entries,room_optimal=optimize_classrooms(selected,entries,locked,max(.001,time_limit-(time.monotonic()-started)))
         room_quality=classroom_metrics(selected,entries)
-    hours = sum(e['duration']*settings.period_minutes/60 for e in entries)
-    return {'status':'feasible','entries':entries,'issues':[],'scope':scope,'elapsed_seconds':round(time.monotonic()-started,3),
-            'solutions':[
-                'Placed every requested lecture, lab, and project in the selected plan without teacher, student, or room collisions.',
-                f'Kept student days consecutive from {settings.start}, excluding configured breaks and blocked periods. Days may finish early.',
-                'Assigned only rooms with sufficient seats and matching department/year eligibility. Shared rooms are allocated dynamically when Auto is selected.',
-                'Reserved separate elective periods within each department and semester, including across divisions.',
-                'Respected teacher coming/leaving times, daily and weekly limits, and lab/project eligibility. Sessions never cross breaks.',
-                f'Preserved {len(locked)} sessions outside the selected divisions from the base timetable.' if locked else 'Created a fresh plan for the selected scope.',
-                'Spread each subject’s lectures across working days; subjects with up to one lecture per working day never repeat on the same day.' if settings.spread_lectures else 'Used the saved lecture-distribution policy.',
-                f'Classroom preference: {settings.classroom_run_length} consecutive lecture periods; {room_quality["classroom_changes"]} changes, including {room_quality["early_changes"]} before the preferred run length. Mandatory constraints remain enforced.' if settings.classroom_run_length>1 else 'Classroom continuity optimization was not requested.',
-                f'Limited the longest student day to {solver.Value(peak)} teaching periods.'
-            ],'summary':{'sessions':len(entries),'teaching_hours':hours,'divisions':len(selected.groups),
-                          'teachers':len({e['teacher_id'] for e in entries}),'max_daily_hours':solver.Value(peak)*settings.period_minutes/60,
-                          'max_daily_periods':solver.Value(peak),'balance_optimal':result == cp_model.OPTIMAL or solver.Value(peak)==lower_bound,
-                          'classroom_optimization':{**room_quality,'optimal':room_optimal,'minimum_run_enforced':settings.classroom_run_length>=3,'enforced_group_ids':sorted(targets) if settings.classroom_run_length>=3 else []},'algorithm':'Google OR-Tools CP-SAT'}}
+    return success(entries,room_optimal,solver.Value(peak),result==cp_model.OPTIMAL or solver.Value(peak)==lower_bound)

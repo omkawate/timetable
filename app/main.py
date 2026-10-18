@@ -91,7 +91,7 @@ def ask_assistant(payload: AssistantRequest):
         if record is None: raise HTTPException(404,'Timetable not found.')
         records=[record]
     else:
-        records=[storage.get_generation(r['id']) for r in storage.generations()]
+        records=[record for r in storage.generations() if (record:=storage.get_generation(r['id'])) is not None]
     if not records:
         raise HTTPException(422,'Generate or select a saved timetable first.')
     try:
@@ -192,7 +192,20 @@ def generate_timetable(payload: GenerateRequest):
                     if saved['config']['settings']==config.settings.model_dump():
                         base=saved
                         break
-        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [])
+        seed=base
+        target_ids={g.id for g in groups}
+        if payload.continue_latest and (not seed or not target_ids<={e['group_id'] for e in seed['result']['entries']}):
+            # A previous two-period plan can seed the new three-period rule.
+            wanted={k:v for k,v in config.settings.model_dump().items() if k!='classroom_run_length'}
+            for candidate in storage.generations():
+                if candidate['status']=='feasible' and candidate['config_revision']==current['revision']:
+                    saved=storage.get_generation(candidate['id'])
+                    if target_ids<={e['group_id'] for e in saved['result']['entries']} and {k:v for k,v in saved['config']['settings'].items() if k!='classroom_run_length'}==wanted:
+                        seed=saved
+                        break
+        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [],
+                          initial_entries=seed['result']['entries'] if seed else None)
+        result['scope']['seed_generation_id']=seed['id'] if seed else None
         result['scope']['base_generation_id'] = base['id'] if base else None
         identifier = storage.save_generation(payload.name.strip() or 'Timetable', current['revision'], config.model_dump(), result)
         return storage.get_generation(identifier)
@@ -205,6 +218,25 @@ def generation_detail(identifier: int):
     if result is None:
         raise HTTPException(404, 'Timetable not found.')
     return result
+
+class DeleteGenerationRequest(BaseModel):
+    revision: int = Field(ge=0, strict=True)
+
+
+@app.delete('/api/generations/{identifier}')
+def delete_timetable(identifier: int, payload: DeleteGenerationRequest):
+    if not generation_lock.acquire(blocking=False):
+        raise HTTPException(409,'Wait for generation to finish before deleting a saved timetable.')
+    try:
+        generation_detail(identifier)
+        try:
+            storage.delete_generation(identifier,payload.revision)
+        except storage.RevisionConflict as exc:
+            raise HTTPException(409,str(exc)) from exc
+        return {'deleted':identifier}
+    finally:
+        generation_lock.release()
+
 
 class WorkflowUpdate(BaseModel):
     revision: int = Field(ge=0)
@@ -291,7 +323,7 @@ def performance():
     solver_rows=[]
     for row in rows:
         record = storage.get_generation(row['id'])
-        if record['result'].get('source')=='manual':
+        if record is None or record['result'].get('source')=='manual':
             continue
         solver_rows.append(row)
         row['duration'] = record['result'].get('elapsed_seconds',0)

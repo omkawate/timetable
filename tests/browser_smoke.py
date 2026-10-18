@@ -119,6 +119,7 @@ def run():
                     expect(page.locator('#main')).to_contain_text('2 scheduled divisions · 7 remaining')
                     # Approval and lock controls persist and gate manual edits.
                     page.get_by_role('button',name='Approve timetable',exact=True).click()
+                    expect(page.get_by_role('button',name='Delete timetable',exact=True)).to_be_disabled()
                     expect(page.get_by_role('button',name='Edit timetable manually',exact=True)).to_be_disabled()
                     page.get_by_role('button',name='Lock timetable',exact=True).click()
                     expect(page.get_by_role('button',name='Mark Draft',exact=True)).to_be_disabled()
@@ -126,6 +127,7 @@ def run():
                     expect(page.get_by_role('button',name='Unlock timetable',exact=True)).to_be_visible()
                     page.get_by_role('button',name='Unlock timetable',exact=True).click()
                     page.get_by_role('button',name='Mark Draft',exact=True).click()
+                    expect(page.get_by_role('button',name='Delete timetable',exact=True)).to_be_enabled()
                     page.get_by_role('button',name='Edit entire plan',exact=True).click()
                     # Swapping every Monday/Tuesday placement together is a conflict-free manual edit.
                     page.locator('.manual-editor .edit-day').evaluate_all("nodes => nodes.forEach(n => {if(n.value==='0')n.value='1';else if(n.value==='1')n.value='0';})")
@@ -277,6 +279,29 @@ def run():
                     page.get_by_role('link',name='Import data',exact=True).click()
                     page.locator('#csv-file').set_input_files({'name':'invalid.csv','mimeType':'text/csv','buffer':b'bad,headers\n1,2'})
                     expect(page.locator('#import-result')).to_contain_text('headers must match')
+                    # Delete failed reports and saved versions through the actual controls.
+                    page.set_viewport_size({'width':1440,'height':1050})
+                    before_delete=page.request.get(base+'/api/config').json()
+                    page.goto(base+'/#timetables')
+                    history=page.request.get(base+'/api/generations').json()
+                    failure=next(h for h in history if h['status']!='feasible')
+                    page.locator('#generation-select').select_option(str(failure['id']))
+                    page.get_by_role('button',name='Delete timetable',exact=True).click()
+                    page.get_by_role('button',name='Cancel',exact=True).click()
+                    assert page.request.get(base+'/api/generations').json()==history
+                    page.get_by_role('button',name='Delete timetable',exact=True).click()
+                    page.get_by_role('button',name='Permanently delete',exact=True).click()
+                    expect(page.locator('#modal')).not_to_be_visible()
+                    assert page.request.get(base+f"/api/generations/{failure['id']}").status==404
+                    page.goto(base+'/#history')
+                    while page.get_by_role('button',name='Delete timetable',exact=True).count():
+                        page.get_by_role('button',name='Delete timetable',exact=True).first.click()
+                        page.get_by_role('button',name='Permanently delete',exact=True).click()
+                        expect(page.locator('#modal')).not_to_be_visible()
+                    page.goto(base+'/#timetables')
+                    expect(page.locator('#main')).to_contain_text('No timetable yet')
+                    assert page.request.get(base+'/api/generations').json()==[]
+                    assert page.request.get(base+'/api/config').json()==before_delete
                     assert errors == [], errors
                     browser.close()
                     print('Browser smoke passed: desktop/mobile navigation, academic CRUD, batch filtering, scoped generation, manual swaps/rejected edits, approval/lock/draft persistence, imports, professor exports, immutable versions, and actionable infeasibility. No JavaScript errors.')
