@@ -90,7 +90,8 @@ def generations():
         rows = db.execute('''SELECT id,name,created_at,config_revision,
             json_extract(result,'$.status') AS status,
             json_extract(result,'$.summary.teaching_hours') AS teaching_hours,
-            COALESCE(json_extract(config,'$.settings.spread_lectures'),0) AS spread_lectures
+            COALESCE(json_extract(config,'$.settings.spread_lectures'),0) AS spread_lectures,
+            COALESCE(json_extract(config,'$.settings.classroom_run_length'),1) AS classroom_run_length
             FROM generations ORDER BY id DESC LIMIT 100''').fetchall()
         output=[{**dict(row),'workflow':_workflow(db,row['id'])} for row in rows]
     return output

@@ -202,8 +202,29 @@ On Windows, replace `.venv/bin/python` with `.venv\Scripts\python.exe`. Browser 
 
 ## Further additions
 
-Useful next steps are coordinator/faculty login with role-based approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator; there is no external AI service or automatic email messaging. Authentication and HTTPS would be needed before public deployment.
+Useful next steps are coordinator/faculty login with role-based approval, individual teacher leave dates, specialist room equipment, manually pinned individual sessions, substitutions, and calendar subscriptions. The current version is intended for a local coordinator; optional OpenAI explanations are available, and there is no automatic email messaging. Authentication and HTTPS would be needed before public deployment.
 
 ## Reusable cloud workflow
 
 Use `/workspace/timetable`. Install `requirements-dev.txt`, run `run.py`, check `/api/health`, and run `pytest`. No frontend build, external database service, or secrets are required. Server processes must be restarted after restoring an environment snapshot. Keep real SQLite data out of source archives.
+
+## Update based on your supplied time.zip
+
+This update retains the uploaded version's academic dataset and scheduling rules. No subjects, faculty, classrooms, laboratories, batches, or mini-project records were added to its sample data. See [UPDATE_NOTES.md](UPDATE_NOTES.md) and [START_HERE.txt](START_HERE.txt).
+
+- **AI Chat**: click the floating speech-bubble button at the bottom-right of the home page, or **AI chat assistant** in the sidebar. Choose all saved timetables or one timetable. For room alternatives, also select a session. Local checks require no key and never edit your timetable.
+- **Classroom optimization**: in the Generate timetable dialog choose flexible allocation, or prefer 2 or 3 consecutive lecture periods in the same classroom. This is a preference, subject to actual room availability. Optimization preserves session times, teachers, capacities, locked divisions, and no-gap constraints. Results report any remaining early changes. Existing saved plans remain unchanged.
+- **Mini projects**: use the separate sidebar page to add your own project name/code, division, supervisor, sessions per week, hours per session, and an existing classroom or lab. It starts empty with this dataset. Opening the page does not create records. Generate again after saving your own project. Session duration must fit whole teaching periods without crossing recess.
+- **All batches display**: simultaneous practicals appear as separate, labelled batch cards. Cells grow to contain them without overlapping adjacent periods.
+
+### Optional OpenAI explanations on Windows
+
+Local timetable checks work immediately. To enable the optional online mode, stop the server, open Command Prompt in the project directory, and run:
+
+```bat
+set "UNISCHED_OPENAI_API_KEY=your-api-key"
+set "UNISCHED_OPENAI_MODEL=gpt-4.1-mini"
+start_windows.bat
+```
+
+Select **OpenAI explanation + local checks** in AI Chat. The key stays on the server. Online mode sends your question and the selected timetable facts (including faculty and room names) to OpenAI. Model access and API usage depend on your account. If the key or service is unavailable, verified local checks remain available. Automated tests mock the online response; no paid API call is required for setup.

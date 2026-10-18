@@ -103,6 +103,8 @@ class Offering(Record):
     lab_room_id: str | None = None
     projects: int = Field(default=0, ge=0, le=20, strict=True)
     batch_id: str | None = None
+    project_room_id: str | None = None
+    project_hours: float | None = Field(default=None, ge=0.5, le=8, allow_inf_nan=False)
 
     @model_validator(mode='after')
     def nonempty(self):
@@ -182,6 +184,8 @@ class Configuration(BaseModel):
             if group.room_id and (group.room_id not in rooms or rooms[group.room_id].kind != 'classroom'):
                 raise ValueError(f'Division {group.division} needs a valid classroom.')
         for item in self.offerings:
+            if item.projects and item.project_hours is not None and not (item.project_hours*60/self.settings.period_minutes).is_integer():
+                raise ValueError('Mini-project hours must fit a whole number of teaching periods.')
             if item.group_id not in groups or item.subject_id not in subjects or item.teacher_id not in teachers:
                 raise ValueError(f'Assignment {item.id} references a missing division, subject, or teacher.')
             if groups[item.group_id].semester != subjects[item.subject_id].semester:
@@ -190,6 +194,8 @@ class Configuration(BaseModel):
                 raise ValueError(f'Assignment {item.id}: subject and division departments must match.')
             if item.batch_id and (item.batch_id not in batches or batches[item.batch_id].group_id != item.group_id):
                 raise ValueError(f'Assignment {item.id} references an invalid lab batch.')
+            if item.project_room_id and item.project_room_id not in rooms:
+                raise ValueError(f'Assignment {item.id} references an invalid project room.')
             if item.lab_room_id and (item.lab_room_id not in rooms or rooms[item.lab_room_id].kind != 'lab'):
                 raise ValueError(f'Assignment {item.id} references an invalid laboratory.')
             pair = (item.group_id, item.subject_id, item.batch_id)

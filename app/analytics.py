@@ -2,6 +2,7 @@
 from collections import defaultdict, Counter
 import math
 from .domain import Configuration, minutes
+from .classrooms import classroom_metrics
 from .resources import affected_units, eligible_rooms, student_units, session_specs
 
 
@@ -94,7 +95,7 @@ def analyze(record):
     available=sum(len(settings.available(d)) for d in range(len(settings.days)))
     room_rows=[{'id':r.id,'name':r.name,'kind':r.kind,'capacity':r.capacity,'used_periods':room_load[r.id],
                 'available_periods':available,'utilization':round(100*room_load[r.id]/available,1) if available else 0} for r in config.rooms]
-    return {'available':True,'hard_conflicts':len(violations),'violations':violations,
+    return {'available':True,'classroom_optimization':classroom_metrics(config,entries),'hard_conflicts':len(violations),'violations':violations,
         'health_score':100 if not violations else max(0,100-len(violations)*5),
         'student_quality':round(100*filled/(filled+gaps),1) if filled+gaps else 0,
         'internal_gaps':gaps,'idle_minutes':gaps*settings.period_minutes,'compact_days':sum(r['gaps']==0 for r in student_rows),

@@ -13,3 +13,32 @@
 @media(max-width:650px){.topbar{gap:10px}.topbar .topbar-right{display:flex}.topbar .system-status{display:none}.topbar-left{min-width:0;flex:1}.topbar-college{max-width:145px;font-size:9px}.department-switch{display:flex;flex-direction:column;gap:4px;font-size:9px;max-width:145px}.department-switch select{width:145px;font-size:11px;padding:8px}.topbar-right{flex-shrink:0}.schedule-topline{min-width:0}.schedule-topline select{width:100%;min-width:0}}
 
 .workflow-panel{margin-bottom:22px}.workflow-panel h2 .tag{vertical-align:middle;margin-left:8px}.workflow-panel .panel-body{padding-top:16px;padding-bottom:12px}dialog:has(.manual-editor){width:min(1150px,96vw);max-width:96vw}.manual-editor select{max-width:210px;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:10px;background:white;color:var(--ink)}.manual-editor .data-table{min-width:800px}.manual-editor .form-actions{position:sticky;bottom:0;background:white;padding:14px 0}.manual-editor .form-error{white-space:pre-wrap}.manual-editor .info-banner{margin-bottom:18px}
+
+/* Each simultaneous batch gets its own naturally sized card. */
+.timetable td{vertical-align:top}
+.timetable .session-stack{display:flex;flex-direction:column;gap:8px;padding:2px}
+.timetable .lesson{height:auto;min-height:100px;box-sizing:border-box;position:relative;overflow-wrap:anywhere}
+.timetable .lesson strong{font-size:12px;line-height:1.4}
+.timetable .lesson small{font-size:10px;line-height:1.5}
+.timetable .lesson-code{font-size:10px}
+.timetable .batch-label{display:inline-block;background:#d5ebe4;color:#185743;border-radius:4px;padding:3px 7px;margin:0 0 7px;font-size:11px;font-weight:700}
+.timetable .parallel .lesson{border:1px solid #b9d7cd;border-left:4px solid #39816a;min-height:110px}
+.timetable{min-width:1100px}
+.timetable .parallel-label{font-size:10px;font-weight:600;color:#36725d;padding:3px 2px}
+
+.assistant-messages{display:flex;flex-direction:column;gap:18px;margin-bottom:24px;max-height:650px;overflow:auto}
+.assistant-message{padding:18px;border:1px solid var(--line);border-radius:12px;background:#f6f5ff}
+.assistant-message.user{background:#f3f8f6;align-self:flex-end;max-width:90%}
+.assistant-message small{display:block;color:var(--muted);margin-top:5px}
+.assistant-answer{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;margin-top:12px;font-size:13px}
+.assistant-message details{margin-top:16px}
+#assistant-question{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d9dce9;border-radius:8px;font:inherit;resize:vertical}
+
+.timetable .batch-label[hidden]{display:none}
+
+.chat-launcher{position:fixed;right:24px;bottom:24px;z-index:35;display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:30px;background:#5749d7;color:#fff;font-weight:700;box-shadow:0 6px 20px #3825a840;text-decoration:none}
+.chat-launcher svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8}
+.chat-launcher:hover{background:#4537bc}
+.chat-launcher:focus-visible{outline:3px solid #baaaff;outline-offset:4px}
+@media(max-width:600px){.chat-launcher{right:16px;bottom:16px;padding:12px 16px} .app-footer{padding-bottom:80px}}
+@media print{.chat-launcher{display:none}}

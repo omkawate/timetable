@@ -5,6 +5,7 @@ import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
 from .domain import Configuration, minutes
+from .classrooms import classroom_metrics, optimize_classrooms
 from .resources import student_units, affected_units, session_specs, teaching_slots, eligible_rooms
 
 
@@ -217,7 +218,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         model.Add(model.GetBoolVarFromProtoIndex(index) == 1)
     model.Add(peak >= lower_bound)
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = max(0.000001,time_limit-(time.monotonic()-started))
+    solver.parameters.max_time_in_seconds = max(0.000001,time_limit*(.8 if settings.classroom_run_length>1 else 1)-(time.monotonic()-started))
     solver.parameters.num_search_workers = 4
     solver.parameters.random_seed = random_seed if random_seed is not None else secrets.randbelow(2**30)
     result = solver.Solve(model)
@@ -237,6 +238,8 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         return failed('timeout',[issue('SEARCH_LIMIT','The search limit was reached without a complete timetable. This does not prove generation is impossible.',
                                       'Use a longer search limit, schedule connected divisions together, or reduce contention for shared rooms.')])
     entries = sorted([entry for var,entry in candidates if solver.BooleanValue(var)],key=lambda e:(e['group_id'],e['day'],e['slot'],e['room_id']))
+    entries,room_optimal=optimize_classrooms(selected,entries,locked,max(.01,time_limit-(time.monotonic()-started)))
+    room_quality=classroom_metrics(selected,entries)
     hours = sum(e['duration']*settings.period_minutes/60 for e in entries)
     return {'status':'feasible','entries':entries,'issues':[],'scope':scope,'elapsed_seconds':round(time.monotonic()-started,3),
             'solutions':[
@@ -247,7 +250,9 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                 'Respected teacher coming/leaving times, daily and weekly limits, and lab/project eligibility. Sessions never cross breaks.',
                 f'Preserved {len(locked)} sessions outside the selected divisions from the base timetable.' if locked else 'Created a fresh plan for the selected scope.',
                 'Spread each subject’s lectures across working days; subjects with up to one lecture per working day never repeat on the same day.' if settings.spread_lectures else 'Used the saved lecture-distribution policy.',
+                f'Classroom preference: {settings.classroom_run_length} consecutive lecture periods; {room_quality["classroom_changes"]} changes, including {room_quality["early_changes"]} before the preferred run length. Mandatory constraints remain enforced.' if settings.classroom_run_length>1 else 'Classroom continuity optimization was not requested.',
                 f'Limited the longest student day to {solver.Value(peak)} teaching periods.'
             ],'summary':{'sessions':len(entries),'teaching_hours':hours,'divisions':len(selected.groups),
                           'teachers':len({e['teacher_id'] for e in entries}),'max_daily_hours':solver.Value(peak)*settings.period_minutes/60,
-                          'max_daily_periods':solver.Value(peak),'balance_optimal':result == cp_model.OPTIMAL,'algorithm':'Google OR-Tools CP-SAT'}}
+                          'max_daily_periods':solver.Value(peak),'balance_optimal':result == cp_model.OPTIMAL or solver.Value(peak)==lower_bound,
+                          'classroom_optimization':{**room_quality,'optimal':room_optimal},'algorithm':'Google OR-Tools CP-SAT'}}

@@ -48,6 +48,16 @@ def run():
                     expect(page.locator('.stat-number').first).to_have_text('33')
                     page.screenshot(path=str(ARTIFACTS/'overview-desktop.png'),full_page=True)
 
+                    original_config = page.request.get(base+'/api/config').json()
+                    expect(page.get_by_role('link',name='Open AI chat assistant')).to_be_visible()
+                    page.get_by_role('link',name='Open AI chat assistant').click()
+                    expect(page.get_by_role('heading',name='Ask about your timetable.')).to_be_visible()
+                    expect(page.locator('#assistant-status')).to_contain_text('Local checks ready')
+                    page.get_by_role('link',name='Mini projects',exact=True).click()
+                    expect(page.locator('#main')).to_contain_text('No mini projects added')
+                    assert page.request.get(base+'/api/config').json() == original_config
+                    page.screenshot(path=str(ARTIFACTS/'mini-projects-empty.png'),full_page=True)
+
                     # New workspace controls, exercised through actual forms and buttons.
                     page.goto(base+'/#departments')
                     page.get_by_role('button',name='Add department',exact=True).click()
@@ -85,6 +95,22 @@ def run():
                     expect(page.locator('.lesson')).to_have_count(32)
                     page.locator('#batch-select').select_option('')
                     page.screenshot(path=str(ARTIFACTS/'it-division-desktop.png'),full_page=True)
+                    assert page.locator('.session-stack').evaluate_all("""stacks => stacks.every(s => {
+                        const cards=[...s.querySelectorAll('.lesson')];
+                        const box=s.closest('td').getBoundingClientRect();
+                        return cards.every((c,i) => {const r=c.getBoundingClientRect();
+                          return r.top>=box.top && r.bottom<=box.bottom+1 && (!i || r.top>=cards[i-1].getBoundingClientRect().bottom);
+                        });
+                    })""")
+                    page.goto(base+'/#assistant')
+                    page.get_by_label('Timetable scope').select_option(index=1)
+                    expect(page.locator('#assistant-session')).to_be_enabled()
+                    page.get_by_label('Session for a room check').select_option(index=1)
+                    page.get_by_label('Your question').fill('Is there a replacement classroom for this session?')
+                    page.get_by_role('button',name='Ask assistant',exact=True).click()
+                    expect(page.locator('.assistant-message.assistant')).to_contain_text('Local timetable checks')
+                    page.screenshot(path=str(ARTIFACTS/'assistant-desktop.png'),full_page=True)
+
                     page.goto(base+'/#generate')
                     page.get_by_role('button',name='Generate Division B',exact=False).click()
                     page.locator('#modal').get_by_role('button',name='Generate timetable',exact=True).click()
@@ -158,6 +184,24 @@ def run():
                     page.locator('#modal').get_by_role('button',name='Delete teacher',exact=True).click()
                     expect(page.locator('#setup-table')).to_contain_text('No matching teachers')
 
+                    # Project records are created only by this explicit user form action.
+                    page.goto(base+'/#projects')
+                    page.get_by_role('button',name='Add mini project',exact=True).click()
+                    page.get_by_label('Project name',exact=True).fill('Browser project')
+                    page.get_by_label('Project subject code',exact=True).fill('TESTPROJ')
+                    page.get_by_label('Hours per session',exact=True).fill('2')
+                    page.get_by_role('button',name='Save mini project',exact=True).click()
+                    expect(page.locator('#modal')).not_to_be_visible()
+                    expect(page.locator('#main')).to_contain_text('Browser project')
+                    page.reload()
+                    expect(page.locator('#main')).to_contain_text('Browser project')
+                    page.get_by_role('button',name='Edit project',exact=True).click()
+                    expect(page.get_by_label('Hours per session',exact=True)).to_have_value('2')
+                    page.get_by_role('button',name='Cancel',exact=True).click()
+                    page.get_by_role('button',name='Remove project',exact=True).click()
+                    page.get_by_role('button',name='Remove project sessions',exact=True).click()
+                    expect(page.locator('#main')).to_contain_text('No mini projects added')
+
                     page.get_by_role('link',name='Import data',exact=True).click()
                     page.locator('#csv-file').set_input_files(str(ROOT/'sample_data'/'unisched_semesters_3_5_7.csv'))
                     expect(page.locator('#import-result')).to_contain_text('54 Assignments')
@@ -212,6 +256,7 @@ def run():
                     page.set_viewport_size({'width':390,'height':844})
                     page.goto(base+'/#overview')
                     expect(page.get_by_role('heading',name='A better week starts here.')).to_be_visible()
+                    expect(page.get_by_role('link',name='Open AI chat assistant')).to_be_visible()
                     page.wait_for_function("document.querySelector('#sidebar').getBoundingClientRect().right <= 0")
                     page.evaluate("document.querySelector('#toast').classList.remove('visible')")
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
