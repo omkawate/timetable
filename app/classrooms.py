@@ -1,6 +1,5 @@
 """Measure classroom continuity without weakening mandatory scheduling rules."""
 from collections import defaultdict
-from .calendar import minutes
 
 
 def classroom_metrics(config, entries):
@@ -25,7 +24,7 @@ def classroom_metrics(config, entries):
             'early_changes':sum(c['shortfall']>0 for c in changes) if preferred>1 else 0,
             'shortfall_periods':sum(c['shortfall'] for c in changes) if preferred>1 else 0,
             'changes':changes,
-            'note':'Preference applies to consecutive lecture periods within each division. Labs, projects, recess, and free periods reset the run. Capacity, collisions, student continuity, and daily balance take priority.'}
+            'note':('Three-period minimum is enforced for newly generated divisions. Preserved historical divisions keep their existing rooms. ' if preferred>=3 else 'Room continuity is a preference. ')+'The rule applies within consecutive lecture blocks; labs, projects, recess, and free periods reset the run. A shorter block may end without adding lectures. Capacity, collisions, and student continuity remain enforced.'}
 
 
 def optimize_classrooms(config, entries, locked_entries, time_limit):
@@ -58,7 +57,8 @@ def optimize_classrooms(config, entries, locked_entries, time_limit):
     for variables in bookings.values(): model.Add(sum(variables)<=1)
     periods=config.settings.periods();preferred=config.settings.classroom_run_length
     changes=[];shortfalls=[]
-    for lecture_slots in slots.values():
+    locked_groups={e['group_id'] for e in locked_entries}
+    for (group,day),lecture_slots in slots.items():
         last_slot=last_room=last_run=None
         for p,code in sorted(lecture_slots.items()):
             run=model.NewIntVar(1,preferred,'room_run')
@@ -75,6 +75,8 @@ def optimize_classrooms(config, entries, locked_entries, time_limit):
                 shortfall=model.NewIntVar(0,preferred-1,'shortfall')
                 model.Add(shortfall==preferred-last_run).OnlyEnforceIf(change)
                 model.Add(shortfall==0).OnlyEnforceIf(change.Not())
+                if preferred>=3 and group not in locked_groups:
+                    model.Add(shortfall==0)
                 changes.append(change);shortfalls.append(shortfall)
             last_slot,last_room,last_run=p,code,run
     model.Minimize(sum(shortfalls)*(len(changes)+1)+sum(changes))
@@ -89,3 +91,45 @@ def optimize_classrooms(config, entries, locked_entries, time_limit):
     if (after['shortfall_periods'],after['classroom_changes'])>(before['shortfall_periods'],before['classroom_changes']):
         return entries,False
     return updated,result==cp_model.OPTIMAL
+
+
+def require_classroom_runs(model, config, candidates, target_groups, enabled):
+    """Constrain room changes while choosing times, not only after times are fixed.
+
+    A lecture segment can finish before three periods (e.g. before a lab).
+    Within a continuing segment, switching rooms requires a complete run.
+    Preserved divisions are historical bookings and are never rewritten here.
+    """
+    preferred=config.settings.classroom_run_length
+    if preferred<3:
+        return
+    room_codes={r.id:i+1 for i,r in enumerate(config.rooms)}
+    slots=defaultdict(list)
+    for var,entry in candidates:
+        if entry['kind']=='lecture' and entry['group_id'] in target_groups:
+            for p in range(entry['slot'],entry['slot']+entry['duration']):
+                slots[entry['group_id'],entry['day'],p].append((var,room_codes[entry['room_id']]))
+    periods=config.settings.periods()
+    for group in target_groups:
+        for day in range(len(config.settings.days)):
+            previous_room=previous_run=previous_active=None
+            for p in range(len(periods)):
+                choices=slots[group,day,p]
+                active=model.NewBoolVar(f'lecture_active_{group}_{day}_{p}')
+                model.Add(active==sum(v for v,_ in choices))
+                room=model.NewIntVar(0,len(room_codes),'lecture_room')
+                model.Add(room==sum(v*code for v,code in choices))
+                run=model.NewIntVar(0,preferred,'lecture_room_run')
+                model.Add(run==0).OnlyEnforceIf(active.Not())
+                if p==0 or periods[p-1][1]!=periods[p][0]:
+                    model.Add(run==1).OnlyEnforceIf(active)
+                else:
+                    same=model.NewBoolVar('same_lecture_room')
+                    model.Add(room==previous_room).OnlyEnforceIf(same)
+                    model.Add(room!=previous_room).OnlyEnforceIf(same.Not())
+                    extended=model.NewIntVar(1,preferred,'extended_lecture_room_run')
+                    model.AddMinEquality(extended,[previous_run+1,preferred])
+                    model.Add(run==extended).OnlyEnforceIf([active,same])
+                    model.Add(run==1).OnlyEnforceIf([active,same.Not()])
+                    model.Add(previous_run>=preferred).OnlyEnforceIf([enabled,active,previous_active,same.Not()])
+                previous_room,previous_run,previous_active=room,run,active

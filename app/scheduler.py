@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
 from .domain import Configuration, minutes
-from .classrooms import classroom_metrics, optimize_classrooms
+from .classrooms import classroom_metrics, optimize_classrooms, require_classroom_runs
 from .resources import student_units, affected_units, session_specs, teaching_slots, eligible_rooms
 
 
@@ -238,8 +238,34 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         return failed('timeout',[issue('SEARCH_LIMIT','The search limit was reached without a complete timetable. This does not prove generation is impossible.',
                                       'Use a longer search limit, schedule connected divisions together, or reduce contention for shared rooms.')])
     entries = sorted([entry for var,entry in candidates if solver.BooleanValue(var)],key=lambda e:(e['group_id'],e['day'],e['slot'],e['room_id']))
-    entries,room_optimal=optimize_classrooms(selected,entries,locked,max(.01,time_limit-(time.monotonic()-started)))
+    room_budget=max(.01,time_limit-(time.monotonic()-started))
+    if settings.classroom_run_length>=3:
+        room_budget=min(room_budget,max(.01,time_limit*.1))
+    entries,room_optimal=optimize_classrooms(selected,entries,locked,room_budget)
     room_quality=classroom_metrics(selected,entries)
+    early_target_changes=[c for c in room_quality['changes'] if c['group_id'] in targets and c['shortfall']>0]
+    if settings.classroom_run_length>=3 and early_target_changes:
+        # Try the inexpensive room-only repair first. If times prevent a full run,
+        # jointly reschedule the selected divisions; never return the violating seed.
+        continuity=model.NewBoolVar('require_three_lecture_room_stay')
+        model.Add(continuity==1)
+        require_classroom_runs(model,selected,candidates,targets,continuity)
+        used={(e['offering_id'],e['kind'],e['day'],e['slot'],e['room_id']) for e in entries}
+        for var,e in candidates:
+            model.AddHint(var,int((e['offering_id'],e['kind'],e['day'],e['slot'],e['room_id']) in used))
+        solver.parameters.max_time_in_seconds=max(.001,time_limit-(time.monotonic()-started))
+        result=solver.Solve(model)
+        if result==cp_model.INFEASIBLE:
+            return failed('infeasible',[issue('CLASSROOM_CONTINUITY',
+                'The selected divisions cannot keep one classroom for at least three consecutive lecture periods with the current rooms, availability, and preserved divisions.',
+                'Provide an eligible room for the complete lecture block, or generate connected divisions together without preserving their old room bookings. Labs, projects, recess, and the end of the day may end a shorter block.')])
+        if result not in (cp_model.OPTIMAL,cp_model.FEASIBLE):
+            return failed('timeout',[issue('CLASSROOM_SEARCH_LIMIT',
+                'A timetable was found, but it changed classrooms before three consecutive lectures. It was not accepted. Search time expired while arranging a compliant timetable; this does not prove it is impossible.',
+                'Increase the search limit or generate connected divisions together so their room bookings can move.')])
+        entries=sorted([entry for var,entry in candidates if solver.BooleanValue(var)],key=lambda e:(e['group_id'],e['day'],e['slot'],e['room_id']))
+        entries,room_optimal=optimize_classrooms(selected,entries,locked,max(.001,time_limit-(time.monotonic()-started)))
+        room_quality=classroom_metrics(selected,entries)
     hours = sum(e['duration']*settings.period_minutes/60 for e in entries)
     return {'status':'feasible','entries':entries,'issues':[],'scope':scope,'elapsed_seconds':round(time.monotonic()-started,3),
             'solutions':[
@@ -255,4 +281,4 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
             ],'summary':{'sessions':len(entries),'teaching_hours':hours,'divisions':len(selected.groups),
                           'teachers':len({e['teacher_id'] for e in entries}),'max_daily_hours':solver.Value(peak)*settings.period_minutes/60,
                           'max_daily_periods':solver.Value(peak),'balance_optimal':result == cp_model.OPTIMAL or solver.Value(peak)==lower_bound,
-                          'classroom_optimization':{**room_quality,'optimal':room_optimal},'algorithm':'Google OR-Tools CP-SAT'}}
+                          'classroom_optimization':{**room_quality,'optimal':room_optimal,'minimum_run_enforced':settings.classroom_run_length>=3,'enforced_group_ids':sorted(targets) if settings.classroom_run_length>=3 else []},'algorithm':'Google OR-Tools CP-SAT'}}

@@ -45,7 +45,7 @@ def test_classroom_runs_are_optimized_and_all_hard_constraints_remain(config,pre
     assert analyze(record)['internal_gaps']==0
 
 
-def test_unavoidable_room_switches_reported_without_relaxing_locks(config):
+def test_three_lecture_rule_reports_impossible_locks_and_can_reschedule_together(config):
     data=config.model_dump();data['settings'].update(days=['Monday','Tuesday'],classroom_run_length=3)
     data['rooms']=[r for r in data['rooms'] if r['id'] in ('r','r2')]
     data['subjects']=data['subjects'][:1]
@@ -57,9 +57,21 @@ def test_unavoidable_room_switches_reported_without_relaxing_locks(config):
     locked=[{'offering_id':'o2','group_id':'g2','subject_id':'s','teacher_id':'t2','kind':'lecture','batch_id':None,
              'day':d,'slot':p,'duration':1,'room_id':'r' if p%2==0 else 'r2'} for d in (0,1) for p in range(3)]
     r=generate(c,20,target_group_ids=['g'],locked_entries=locked,random_seed=42)
+    assert r['status']=='infeasible',r
+    assert r['entries']==[]
+    assert 'CLASSROOM_CONTINUITY' in {i['code'] for i in r['issues']}
+    assert 'without preserving' in next(i['suggestion'] for i in r['issues'] if i['code']=='CLASSROOM_CONTINUITY')
+    fresh=generate(c,20,random_seed=42)
+    assert fresh['status']=='feasible',fresh
+    assert fresh['summary']['classroom_optimization']['early_changes']==0
+    assert analyze({'config':c.model_dump(),'result':fresh})['hard_conflicts']==0
+    # A third room lets a new division keep one classroom while old bookings stay intact.
+    c.rooms.append(config.rooms[3].model_copy())
+    r=generate(c,20,target_group_ids=['g'],locked_entries=locked,random_seed=42)
     assert r['status']=='feasible',r
     assert [e for e in r['entries'] if e['group_id']=='g2']==locked
-    assert r['summary']['classroom_optimization']['early_changes']>0
+    assert all(e['room_id']=='r3' for e in r['entries'] if e['group_id']=='g')
+    assert r['summary']['classroom_optimization']['enforced_group_ids']==['g']
     assert analyze({'config':c.model_dump(),'result':r})['hard_conflicts']==0
 
 

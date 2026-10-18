@@ -11,7 +11,11 @@ Based on the exact source in `time.zip` (commit `130dd57af812b7f5e49eb2dc707ff2a
 
 The original `app/demo.py` and every file under `sample_data/` are byte-for-byte unchanged. The dataset still has 24 subjects, 33 teachers, 9 divisions, 27 batches, 7 classrooms, and 6 laboratories. No mini-project entries are seeded. The original lab assignments, lecture distribution, college timings, recess, and no-gap constraints are preserved.
 
-Room optimization first obtains a valid schedule, then reallocates lecture rooms with days, times, faculty, and non-lecture sessions fixed. It minimizes changes before the requested 2/3-period run and then total changes. Recess, laboratories, projects, and gaps reset a run. The result reports whether the room allocation was proven optimal for those fixed session times; constraints may prevent every preference from being met.
+Classroom correction: the generation dialog now defaults to a minimum of three consecutive lecture periods in one room before allowing a room change within a lecture block. A room-only pass is tried first. If it cannot meet this minimum, the solver jointly arranges times and rooms for the selected divisions. A conflicting or unverified result is not returned as a successful timetable. The 2-period option remains a preference, and flexible allocation remains available.
+
+Labs, projects, recess, and the end of the day may end a lecture block before three periods; the rule does not create extra lectures to fill a block. Preserved divisions and saved timetable versions keep their original rooms. Generate a fresh timetable (or include all affected divisions) to apply the rule to them. Capacity, collisions, faculty availability, and no-gap rules remain enforced.
+
+Verification of the classroom correction: the original nine-division dataset generated with zero consecutive-lecture room changes, zero audited hard conflicts, and zero internal gaps. No academic records or unrelated project features were changed.
 
 Projects are created only through an explicit save. You choose their hours, supervisor, and an existing eligible room; the program does not enlarge rooms or create faculty automatically. Existing project assignments retain their original lab and duration behavior unless you edit them. Backups can retain the new project hours and room fields; earlier CSV files still import.
 

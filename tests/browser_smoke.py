@@ -87,6 +87,7 @@ def run():
                     page.locator('#scope-semester').select_option('3')
                     expect(page.locator('.scope-card')).to_have_count(4)
                     page.get_by_role('button',name='Generate Division A',exact=False).click()
+                    expect(page.get_by_label('Classroom continuity preference',exact=True)).to_have_value('3')
                     page.locator('#modal').get_by_role('button',name='Generate timetable',exact=True).click()
                     expect(page.locator('.timetable')).to_be_visible(timeout=35000)
                     expect(page.locator('#main')).to_contain_text('1 scheduled divisions · 8 remaining')

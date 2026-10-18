@@ -14,7 +14,9 @@ WHERE THE CHANGES ARE
 - Mini projects: separate left-sidebar page. No project data has been added.
   Add a project only when you want one, then generate a new timetable.
 - Classroom optimization: Generate timetable > Classroom continuity preference.
-  Choose 2 or 3 consecutive lecture periods in one classroom, or Flexible.
+  Default: keep the same room for at least 3 consecutive lectures before a
+  change within a lecture block. Regenerate to apply this to an existing plan.
+  Labs, recess, projects, and the end of the day may end a shorter block.
 - All batches: separate labelled cards; overlapping text has been fixed.
 
 DATA
