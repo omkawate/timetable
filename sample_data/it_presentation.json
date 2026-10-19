@@ -2,7 +2,7 @@
   "teachers": [
     {
       "id": "t3_0",
-      "name": "Dr. Anjali Deshmukh",
+      "name": "Dr.Vidya Kubde",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty30@example.edu",
@@ -14,7 +14,7 @@
     },
     {
       "id": "t3_1",
-      "name": "Prof. Rahul Patil",
+      "name": "Dr.R. V. Bhaskarwar",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty31@example.edu",
@@ -26,7 +26,7 @@
     },
     {
       "id": "lt3_1",
-      "name": "Prof. Aniket Joshi",
+      "name": "Mrs. A. D. Mhatre",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab31@example.edu",
@@ -38,7 +38,7 @@
     },
     {
       "id": "t3_2",
-      "name": "Prof. Sneha Joshi",
+      "name": "Mrs. G.M.Arwindekar",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty32@example.edu",
@@ -50,7 +50,7 @@
     },
     {
       "id": "lt3_2",
-      "name": "Prof. Riya Kulkarni",
+      "name": "Mr.J. R. Gaidhane",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab32@example.edu",
@@ -62,7 +62,7 @@
     },
     {
       "id": "t3_3",
-      "name": "Prof. Amit Shah",
+      "name": "Dr. R.A.Jolhe",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty33@example.edu",
@@ -74,7 +74,7 @@
     },
     {
       "id": "t3_4",
-      "name": "Prof. Pooja Kulkarni",
+      "name": "Ms. D. P. Kadam",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty34@example.edu",
@@ -86,7 +86,7 @@
     },
     {
       "id": "lt3_4",
-      "name": "Prof. Sahil Desai",
+      "name": "Mr. S. U. Kumane",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab34@example.edu",
@@ -98,7 +98,7 @@
     },
     {
       "id": "t3_5",
-      "name": "Prof. Vikram More",
+      "name": "Mrs. K. P. Rane",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty35@example.edu",
@@ -110,7 +110,7 @@
     },
     {
       "id": "t3_6",
-      "name": "Prof. Sanika Rane",
+      "name": "Mrs. H. A.Khot",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty36@example.edu",
@@ -122,7 +122,7 @@
     },
     {
       "id": "t3_7",
-      "name": "Prof. Omkar Kale",
+      "name": "Mrs. A. R. Rahude",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty37@example.edu",
@@ -134,7 +134,7 @@
     },
     {
       "id": "t5_0",
-      "name": "Dr. Meera Nair",
+      "name": "Mrs. N.Y. Moharkar",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty50@example.edu",
@@ -146,7 +146,7 @@
     },
     {
       "id": "t5_1",
-      "name": "Prof. Sandeep Jadhav",
+      "name": "Mrs. J. S. Phonde",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty51@example.edu",
@@ -158,7 +158,7 @@
     },
     {
       "id": "lt5_1",
-      "name": "Prof. Kunal Patil",
+      "name": "Mr. Krushna Jadhav",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab51@example.edu",
@@ -170,7 +170,7 @@
     },
     {
       "id": "t5_2",
-      "name": "Prof. Neha Desai",
+      "name": "Mrs. Angel Bency",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty52@example.edu",
@@ -182,7 +182,7 @@
     },
     {
       "id": "lt5_2",
-      "name": "Prof. Neelam Shah",
+      "name": "Mrs. Karishma Shelar",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab52@example.edu",
@@ -194,7 +194,7 @@
     },
     {
       "id": "t5_3",
-      "name": "Prof. Kiran Rao",
+      "name": "Mrs. Vaishali Korade",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty53@example.edu",
@@ -206,7 +206,7 @@
     },
     {
       "id": "t5_4",
-      "name": "Dr. Priya Menon",
+      "name": "Pallavi M.N.",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty54@example.edu",
@@ -218,7 +218,7 @@
     },
     {
       "id": "lt5_4",
-      "name": "Prof. Varun Nair",
+      "name": "Bipasha",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab54@example.edu",
@@ -230,7 +230,7 @@
     },
     {
       "id": "t5_5",
-      "name": "Prof. Aditya Gokhale",
+      "name": "Priya Jadhav",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty55@example.edu",
@@ -242,7 +242,7 @@
     },
     {
       "id": "t5_6",
-      "name": "Dr. Snehal Shinde",
+      "name": "Pankaj Rathod",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty56@example.edu",
@@ -254,7 +254,7 @@
     },
     {
       "id": "t5_7",
-      "name": "Prof. Akash Pawar",
+      "name": "Harshali Vihire",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty57@example.edu",
@@ -266,7 +266,7 @@
     },
     {
       "id": "t7_0",
-      "name": "Dr. Shreya Kulkarni",
+      "name": "Reshma",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty70@example.edu",
@@ -278,7 +278,7 @@
     },
     {
       "id": "t7_1",
-      "name": "Prof. Nikhil Sawant",
+      "name": "Sample Professor 01",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty71@example.edu",
@@ -290,7 +290,7 @@
     },
     {
       "id": "lt7_1",
-      "name": "Prof. Tanvi Rao",
+      "name": "Sample Professor 02",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab71@example.edu",
@@ -302,7 +302,7 @@
     },
     {
       "id": "t7_2",
-      "name": "Prof. Kavita Iyer",
+      "name": "Sample Professor 03",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty72@example.edu",
@@ -314,7 +314,7 @@
     },
     {
       "id": "lt7_2",
-      "name": "Prof. Pranav More",
+      "name": "Sample Professor 04",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab72@example.edu",
@@ -326,7 +326,7 @@
     },
     {
       "id": "t7_3",
-      "name": "Prof. Rohit Bhosale",
+      "name": "Sample Professor 05",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty73@example.edu",
@@ -338,7 +338,7 @@
     },
     {
       "id": "t7_4",
-      "name": "Dr. Aditi Naik",
+      "name": "Sample Professor 06",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty74@example.edu",
@@ -350,7 +350,7 @@
     },
     {
       "id": "lt7_4",
-      "name": "Prof. Rohini Jadhav",
+      "name": "Sample Professor 07",
       "max_hours": 20,
       "department_id": "it",
       "email": "lab74@example.edu",
@@ -362,7 +362,7 @@
     },
     {
       "id": "t7_5",
-      "name": "Prof. Sameer Pawar",
+      "name": "Sample Professor 08",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty75@example.edu",
@@ -374,7 +374,7 @@
     },
     {
       "id": "t7_6",
-      "name": "Prof. Rutuja More",
+      "name": "Sample Professor 09",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty76@example.edu",
@@ -386,7 +386,7 @@
     },
     {
       "id": "t7_7",
-      "name": "Dr. Harsh Mehta",
+      "name": "Sample Professor 10",
       "max_hours": 20,
       "department_id": "it",
       "email": "faculty77@example.edu",

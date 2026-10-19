@@ -87,7 +87,6 @@ def run():
                     page.locator('#scope-semester').select_option('3')
                     expect(page.locator('.scope-card')).to_have_count(4)
                     page.get_by_role('button',name='Generate Division A',exact=False).click()
-                    expect(page.get_by_label('Classroom continuity preference',exact=True)).to_have_value('3')
                     page.locator('#modal').get_by_role('button',name='Generate timetable',exact=True).click()
                     expect(page.locator('.timetable')).to_be_visible(timeout=35000)
                     expect(page.locator('#main')).to_contain_text('1 scheduled divisions · 8 remaining')
@@ -119,7 +118,6 @@ def run():
                     expect(page.locator('#main')).to_contain_text('2 scheduled divisions · 7 remaining')
                     # Approval and lock controls persist and gate manual edits.
                     page.get_by_role('button',name='Approve timetable',exact=True).click()
-                    expect(page.get_by_role('button',name='Delete timetable',exact=True)).to_be_disabled()
                     expect(page.get_by_role('button',name='Edit timetable manually',exact=True)).to_be_disabled()
                     page.get_by_role('button',name='Lock timetable',exact=True).click()
                     expect(page.get_by_role('button',name='Mark Draft',exact=True)).to_be_disabled()
@@ -127,7 +125,6 @@ def run():
                     expect(page.get_by_role('button',name='Unlock timetable',exact=True)).to_be_visible()
                     page.get_by_role('button',name='Unlock timetable',exact=True).click()
                     page.get_by_role('button',name='Mark Draft',exact=True).click()
-                    expect(page.get_by_role('button',name='Delete timetable',exact=True)).to_be_enabled()
                     page.get_by_role('button',name='Edit entire plan',exact=True).click()
                     # Swapping every Monday/Tuesday placement together is a conflict-free manual edit.
                     page.locator('.manual-editor .edit-day').evaluate_all("nodes => nodes.forEach(n => {if(n.value==='0')n.value='1';else if(n.value==='1')n.value='0';})")
@@ -225,7 +222,7 @@ def run():
                     page.screenshot(path=str(ARTIFACTS/'timetable-desktop.png'),full_page=True)
 
                     page.get_by_role('button',name='By professor',exact=True).click()
-                    expect(page.locator('.timetable-label')).to_have_text('Dr. Anjali Deshmukh')
+                    expect(page.locator('.timetable-label')).to_have_text('Dr.Vidya Kubde')
                     expect(page.locator('.lesson')).to_have_count(9)
                     expect(page.locator('.timetable td.empty')).to_have_count(31)
                     for text in page.locator('.lesson').all_text_contents():
@@ -240,7 +237,7 @@ def run():
 
                     page.get_by_role('link',name='Academic setup',exact=True).click()
                     page.get_by_role('tab',name='Teachers').click()
-                    page.get_by_label('Search teachers',exact=True).fill('Anjali')
+                    page.get_by_label('Search teachers',exact=True).fill('Vidya')
                     page.get_by_role('button',name='Edit teacher',exact=True).click()
                     page.get_by_label('Teaching hours per week (maximum)',exact=True).fill('1')
                     page.get_by_role('button',name='Save teacher',exact=True).click()
@@ -279,29 +276,6 @@ def run():
                     page.get_by_role('link',name='Import data',exact=True).click()
                     page.locator('#csv-file').set_input_files({'name':'invalid.csv','mimeType':'text/csv','buffer':b'bad,headers\n1,2'})
                     expect(page.locator('#import-result')).to_contain_text('headers must match')
-                    # Delete failed reports and saved versions through the actual controls.
-                    page.set_viewport_size({'width':1440,'height':1050})
-                    before_delete=page.request.get(base+'/api/config').json()
-                    page.goto(base+'/#timetables')
-                    history=page.request.get(base+'/api/generations').json()
-                    failure=next(h for h in history if h['status']!='feasible')
-                    page.locator('#generation-select').select_option(str(failure['id']))
-                    page.get_by_role('button',name='Delete timetable',exact=True).click()
-                    page.get_by_role('button',name='Cancel',exact=True).click()
-                    assert page.request.get(base+'/api/generations').json()==history
-                    page.get_by_role('button',name='Delete timetable',exact=True).click()
-                    page.get_by_role('button',name='Permanently delete',exact=True).click()
-                    expect(page.locator('#modal')).not_to_be_visible()
-                    assert page.request.get(base+f"/api/generations/{failure['id']}").status==404
-                    page.goto(base+'/#history')
-                    while page.get_by_role('button',name='Delete timetable',exact=True).count():
-                        page.get_by_role('button',name='Delete timetable',exact=True).first.click()
-                        page.get_by_role('button',name='Permanently delete',exact=True).click()
-                        expect(page.locator('#modal')).not_to_be_visible()
-                    page.goto(base+'/#timetables')
-                    expect(page.locator('#main')).to_contain_text('No timetable yet')
-                    assert page.request.get(base+'/api/generations').json()==[]
-                    assert page.request.get(base+'/api/config').json()==before_delete
                     assert errors == [], errors
                     browser.close()
                     print('Browser smoke passed: desktop/mobile navigation, academic CRUD, batch filtering, scoped generation, manual swaps/rejected edits, approval/lock/draft persistence, imports, professor exports, immutable versions, and actionable infeasibility. No JavaScript errors.')

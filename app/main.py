@@ -91,7 +91,7 @@ def ask_assistant(payload: AssistantRequest):
         if record is None: raise HTTPException(404,'Timetable not found.')
         records=[record]
     else:
-        records=[record for r in storage.generations() if (record:=storage.get_generation(r['id'])) is not None]
+        records=[storage.get_generation(r['id']) for r in storage.generations()]
     if not records:
         raise HTTPException(422,'Generate or select a saved timetable first.')
     try:
@@ -192,20 +192,7 @@ def generate_timetable(payload: GenerateRequest):
                     if saved['config']['settings']==config.settings.model_dump():
                         base=saved
                         break
-        seed=base
-        target_ids={g.id for g in groups}
-        if payload.continue_latest and (not seed or not target_ids<={e['group_id'] for e in seed['result']['entries']}):
-            # A previous two-period plan can seed the new three-period rule.
-            wanted={k:v for k,v in config.settings.model_dump().items() if k!='classroom_run_length'}
-            for candidate in storage.generations():
-                if candidate['status']=='feasible' and candidate['config_revision']==current['revision']:
-                    saved=storage.get_generation(candidate['id'])
-                    if target_ids<={e['group_id'] for e in saved['result']['entries']} and {k:v for k,v in saved['config']['settings'].items() if k!='classroom_run_length'}==wanted:
-                        seed=saved
-                        break
-        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [],
-                          initial_entries=seed['result']['entries'] if seed else None)
-        result['scope']['seed_generation_id']=seed['id'] if seed else None
+        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [])
         result['scope']['base_generation_id'] = base['id'] if base else None
         identifier = storage.save_generation(payload.name.strip() or 'Timetable', current['revision'], config.model_dump(), result)
         return storage.get_generation(identifier)
@@ -219,24 +206,20 @@ def generation_detail(identifier: int):
         raise HTTPException(404, 'Timetable not found.')
     return result
 
-class DeleteGenerationRequest(BaseModel):
-    revision: int = Field(ge=0, strict=True)
-
-
 @app.delete('/api/generations/{identifier}')
-def delete_timetable(identifier: int, payload: DeleteGenerationRequest):
+def delete_timetable(identifier: int, revision: int = Query(ge=0)):
     if not generation_lock.acquire(blocking=False):
-        raise HTTPException(409,'Wait for generation to finish before deleting a saved timetable.')
+        raise HTTPException(409,'A timetable is being generated. Wait for it to finish before deleting.')
     try:
-        generation_detail(identifier)
         try:
-            storage.delete_generation(identifier,payload.revision)
+            removed=storage.delete_generation(identifier,revision)
         except storage.RevisionConflict as exc:
             raise HTTPException(409,str(exc)) from exc
+        if not removed:
+            raise HTTPException(404,'Timetable not found.')
         return {'deleted':identifier}
     finally:
         generation_lock.release()
-
 
 class WorkflowUpdate(BaseModel):
     revision: int = Field(ge=0)
@@ -323,7 +306,7 @@ def performance():
     solver_rows=[]
     for row in rows:
         record = storage.get_generation(row['id'])
-        if record is None or record['result'].get('source')=='manual':
+        if record['result'].get('source')=='manual':
             continue
         solver_rows.append(row)
         row['duration'] = record['result'].get('elapsed_seconds',0)
@@ -358,7 +341,7 @@ def performance():
             'runs':rows,'measurement_note':'API latency covers the latest 500 completed requests in this process. Generation metrics cover solver runs among the latest 100 saved versions, including failed and timed-out searches; manual edits are excluded. Memory is peak resident process memory when available.'}
 
 @app.get('/api/generations/{identifier}/export/{format}')
-def export_generation(identifier: int, format: Literal['pdf','xlsx'], view: Literal['group','teacher']='group', target: str | None = Query(default=None, max_length=80), batch: str | None = Query(default=None,max_length=80)):
+def export_generation(identifier: int, format: Literal['pdf','xlsx'], view: Literal['group','teacher','classroom','lab']='group', target: str | None = Query(default=None, max_length=80), batch: str | None = Query(default=None,max_length=80)):
     record = generation_detail(identifier)
     if record['result']['status'] != 'feasible':
         raise HTTPException(409, 'Only a successfully generated timetable can be exported.')

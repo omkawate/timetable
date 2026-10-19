@@ -2,18 +2,18 @@
 from .domain import Configuration
 
 CATALOG = {
-3: [('Engineering Mathematics III','IT301','Dr. Anjali Deshmukh'),('Data Structures','IT302','Prof. Rahul Patil'),
-    ('Database Management Systems','IT303','Prof. Sneha Joshi'),('Digital Logic & Architecture','IT304','Prof. Amit Shah'),
-    ('Object-Oriented Programming','IT305','Prof. Pooja Kulkarni'),('Discrete Mathematics','IT306','Prof. Vikram More'),
-    ('Web Technology','ITE301','Prof. Sanika Rane'),('Human Computer Interaction','ITE302','Prof. Omkar Kale')],
-5: [('Operating Systems','IT501','Dr. Meera Nair'),('Computer Networks','IT502','Prof. Sandeep Jadhav'),
-    ('Software Engineering','IT503','Prof. Neha Desai'),('Automata & Compiler Design','IT504','Prof. Kiran Rao'),
-    ('Advanced Database Systems','IT505','Dr. Priya Menon'),('Information Security','IT506','Prof. Aditya Gokhale'),
-    ('Artificial Intelligence','ITE501','Dr. Snehal Shinde'),('Cloud Fundamentals','ITE502','Prof. Akash Pawar')],
-7: [('Machine Learning','IT701','Dr. Shreya Kulkarni'),('Big Data Analytics','IT702','Prof. Nikhil Sawant'),
-    ('Cloud Computing','IT703','Prof. Kavita Iyer'),('Distributed Systems','IT704','Prof. Rohit Bhosale'),
-    ('Cyber Security','IT705','Dr. Aditi Naik'),('DevOps & Software Architecture','IT706','Prof. Sameer Pawar'),
-    ('Internet of Things','ITE701','Prof. Rutuja More'),('Blockchain Technology','ITE702','Dr. Harsh Mehta')]
+3: [('Engineering Mathematics III','IT301','Dr.Vidya Kubde'),('Data Structures','IT302','Dr.R. V. Bhaskarwar'),
+    ('Database Management Systems','IT303','Mrs. G.M.Arwindekar'),('Digital Logic & Architecture','IT304','Dr. R.A.Jolhe'),
+    ('Object-Oriented Programming','IT305','Ms. D. P. Kadam'),('Discrete Mathematics','IT306','Mrs. K. P. Rane'),
+    ('Web Technology','ITE301','Mrs. H. A.Khot'),('Human Computer Interaction','ITE302','Mrs. A. R. Rahude')],
+5: [('Operating Systems','IT501','Mrs. N.Y. Moharkar'),('Computer Networks','IT502','Mrs. J. S. Phonde'),
+    ('Software Engineering','IT503','Mrs. Angel Bency'),('Automata & Compiler Design','IT504','Mrs. Vaishali Korade'),
+    ('Advanced Database Systems','IT505','Pallavi M.N.'),('Information Security','IT506','Priya Jadhav'),
+    ('Artificial Intelligence','ITE501','Pankaj Rathod'),('Cloud Fundamentals','ITE502','Harshali Vihire')],
+7: [('Machine Learning','IT701','Reshma'),('Big Data Analytics','IT702','Sample Professor 01'),
+    ('Cloud Computing','IT703','Sample Professor 03'),('Distributed Systems','IT704','Sample Professor 05'),
+    ('Cyber Security','IT705','Sample Professor 06'),('DevOps & Software Architecture','IT706','Sample Professor 08'),
+    ('Internet of Things','ITE701','Sample Professor 09'),('Blockchain Technology','ITE702','Sample Professor 10')]
 }
 
 def presentation_config():
@@ -42,7 +42,7 @@ def presentation_config():
                 'course_type':'mixed' if labs else 'theory','weekly_hours':lectures+labs*2})
             if labs:
                 lab_teacher=f'lt{sem}_{index}'
-                data['teachers'].append({'id':lab_teacher,'name':f'Prof. { {3:{1: "Aniket Joshi",2:"Riya Kulkarni",4:"Sahil Desai"},5:{1:"Kunal Patil",2:"Neelam Shah",4:"Varun Nair"},7:{1:"Tanvi Rao",2:"Pranav More",4:"Rohini Jadhav"}}[sem][index]}',
+                data['teachers'].append({'id':lab_teacher,'name':{3: {1: 'Mrs. A. D. Mhatre', 2: 'Mr.J. R. Gaidhane', 4: 'Mr. S. U. Kumane'}, 5: {1: 'Mr. Krushna Jadhav', 2: 'Mrs. Karishma Shelar', 4: 'Bipasha'}, 7: {1: 'Sample Professor 02', 2: 'Sample Professor 04', 4: 'Sample Professor 07'}}[sem][index],
                     'department_id':'it','max_hours':20,'max_daily_slots':6,'arrival':'09:00','departure':'17:45',
                     'lab_eligible':True,'email':f'lab{sem}{index}@example.edu','short_code':f'L{sem}{index}'})
             for div_index,div in enumerate('ABC'):

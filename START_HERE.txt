@@ -8,24 +8,13 @@ UNISCHED - UPDATE OF YOUR SUPPLIED time.zip
 4. Open http://127.0.0.1:8000 and press Ctrl+F5 to refresh cached website files.
    Keep the command window open while using UniSched.
 
-LATEST FIXES
-- Repeated generation validates compatible saved placements instead of starting
-  an expensive search again. It still saves a separate new Draft.
-- A fresh search also allocates interchangeable rooms by whole lecture blocks.
-  The minimum-three-consecutive-lectures rule is retained.
-- Delete timetable is beside the saved-timetable selector and in Version history.
-  It also removes failed reports. Unlock/mark Draft first when necessary, then
-  confirm deletion. Academic data and other versions are kept.
-
 WHERE THE CHANGES ARE
 - AI Chat: purple floating button at the bottom-right, including the home page.
   Also accessible through AI chat assistant in the left sidebar.
 - Mini projects: separate left-sidebar page. No project data has been added.
   Add a project only when you want one, then generate a new timetable.
 - Classroom optimization: Generate timetable > Classroom continuity preference.
-  Default: keep the same room for at least 3 consecutive lectures before a
-  change within a lecture block. Regenerate to apply this to an existing plan.
-  Labs, recess, projects, and the end of the day may end a shorter block.
+  Choose 2 or 3 consecutive lecture periods in one classroom, or Flexible.
 - All batches: separate labelled cards; overlapping text has been fixed.
 
 DATA

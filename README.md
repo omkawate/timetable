@@ -213,7 +213,7 @@ Use `/workspace/timetable`. Install `requirements-dev.txt`, run `run.py`, check 
 This update retains the uploaded version's academic dataset and scheduling rules. No subjects, faculty, classrooms, laboratories, batches, or mini-project records were added to its sample data. See [UPDATE_NOTES.md](UPDATE_NOTES.md) and [START_HERE.txt](START_HERE.txt).
 
 - **AI Chat**: click the floating speech-bubble button at the bottom-right of the home page, or **AI chat assistant** in the sidebar. Choose all saved timetables or one timetable. For room alternatives, also select a session. Local checks require no key and never edit your timetable.
-- **Classroom optimization**: in the Generate timetable dialog the default keeps the same classroom for at least 3 consecutive lecture periods before allowing a change within a lecture block. The solver first reallocates rooms; if needed, it rearranges the selected divisions to satisfy this rule. It reports a conflict or search timeout instead of accepting an early room change. Labs, projects, recess, or the end of the day may end a shorter block. Preserved divisions and saved plans remain unchanged. Flexible allocation and the older 2-period preference remain selectable.
+- **Classroom optimization**: in the Generate timetable dialog choose flexible allocation, or prefer 2 or 3 consecutive lecture periods in the same classroom. This is a preference, subject to actual room availability. Optimization preserves session times, teachers, capacities, locked divisions, and no-gap constraints. Results report any remaining early changes. Existing saved plans remain unchanged.
 - **Mini projects**: use the separate sidebar page to add your own project name/code, division, supervisor, sessions per week, hours per session, and an existing classroom or lab. It starts empty with this dataset. Opening the page does not create records. Generate again after saving your own project. Session duration must fit whole teaching periods without crossing recess.
 - **All batches display**: simultaneous practicals appear as separate, labelled batch cards. Cells grow to contain them without overlapping adjacent periods.
 
@@ -228,11 +228,3 @@ start_windows.bat
 ```
 
 Select **OpenAI explanation + local checks** in AI Chat. The key stays on the server. Online mode sends your question and the selected timetable facts (including faculty and room names) to OpenAI. Model access and API usage depend on your account. If the key or service is unavailable, verified local checks remain available. Automated tests mock the online response; no paid API call is required for setup.
-
-## Regeneration and deleting saved timetables
-
-The three-lecture classroom rule is retained. When all automatic lecture rooms have identical eligibility and no laboratory/project or preserved booking uses those rooms, the time solver counts the available classrooms as a shared pool. It then assigns one real room to each continuous lecture block. Fixed rooms, different room eligibility, and reserved rooms use the general solver.
-
-Generating again first validates compatible saved placements against the current academic data and all constraints. If they still fit, it saves a new Draft instead of repeating the search. This can keep the same placements; the result report says when they were reused. Uncheck **Preserve other divisions from the latest compatible plan** for a fresh search. Changed academic data is never silently replaced with an old timetable.
-
-**Delete timetable** is available beside the saved-timetable selector and in Version history, including for timeout/infeasible reports. Confirm the selected version to delete it. Locked versions must be unlocked; approved versions must be marked Draft first. Deletion removes only that version and its workflow record; academic data and other snapshots remain intact. There is no undo.
