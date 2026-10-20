@@ -8,7 +8,7 @@ import pytest
 from app.domain import Configuration, configuration_csv, parse_csv
 from app.main import app
 
-SAMPLE = Path(__file__).resolve().parents[1] / 'sample_data' / 'unisched_semesters_3_5_7.csv'
+SAMPLE = Path(__file__).resolve().parent / 'fixtures' / 'legacy_regression.csv'
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -34,7 +34,8 @@ def test_startup_seeds_sample_once_and_serves_frontend(client):
     assert len(data['configuration']['offerings']) == 54
     assert 'UniSched' in client.get('/').text
     assert client.get('/static/app.js').status_code == 200
-    assert client.get('/api/sample.csv').content == SAMPLE.read_bytes()
+    from app.demo import OFFICIAL_CSV
+    assert client.get('/api/sample.csv').content == OFFICIAL_CSV.read_bytes()
 
 def test_import_preview_does_not_mutate_database(client):
     before = client.get('/api/config').json()

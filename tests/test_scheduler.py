@@ -4,7 +4,7 @@ import pytest
 from app.domain import Configuration, PERIODS, minutes, parse_csv
 from app.scheduler import generate
 
-SAMPLE = Path(__file__).resolve().parents[1] / 'sample_data' / 'unisched_semesters_3_5_7.csv'
+SAMPLE = Path(__file__).resolve().parent / 'fixtures' / 'legacy_regression.csv'
 
 @pytest.fixture(scope='module')
 def sample():

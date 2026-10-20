@@ -37,6 +37,7 @@ class Settings(BaseModel):
     days: list[str] = Field(default_factory=lambda: WEEKDAYS[:5], min_length=1, max_length=7)
     breaks: list[Break] = Field(default_factory=lambda: [Break()], max_length=4)
     blocked: list[Block] = Field(default_factory=list, max_length=40)
+    practical_classroom_codes: list[str] = Field(default_factory=list, max_length=100)
     spread_lectures: bool = True
     classroom_run_length: int = Field(default=1, ge=1, le=3, strict=True)
     lecture_slots: int = Field(default=1, ge=1, le=2, strict=True)

@@ -12,7 +12,7 @@ import pytest
 from app import storage
 from app.analytics import analyze
 from app.calendar import Settings
-from app.demo import presentation_config
+from regression_data import presentation_config
 from app.domain import Configuration, parse_csv
 from app.exchange import configuration_csv_v2, configuration_excel, parse_upload
 from app.exports import excel, pdf
@@ -24,6 +24,8 @@ from test_scheduler import small_config
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv('UNISCHED_DB',str(tmp_path/'workspace.db'))
+    storage.initialize()
+    storage.save_config(presentation_config().model_dump(),0)
     with TestClient(app) as client:
         yield client
 

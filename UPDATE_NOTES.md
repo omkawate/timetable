@@ -1,20 +1,13 @@
-# Changes to the supplied ZIP
+# Official college update
 
-Based on the exact source in `time.zip` (commit `130dd57af812b7f5e49eb2dc707ff2a433e3c9ac`).
+Added 9:00/10:00 start choice, mandatory two/three-period classroom continuity, a Tutorials tab with the supplied room 710 assignments, and exact official CSV loading. Removed old application seed data. Preserved existing views, workflow, manual editing, deletion, batch cards, exports, and AI chat.
 
-| Requested change | Where to use it |
-| --- | --- |
-| Prefer 2 or 3 lectures in one classroom | Generate timetable → Classroom continuity preference |
-| Separate optional Mini Projects page | Left sidebar → Mini projects |
-| Visible chat icon from the starting page | Bottom-right → AI Chat |
-| Repair overlapping batch/session text | Timetables → All batches |
+All practicals remain two hours, working days remain Monday–Friday, and supplied lecture counts and teacher–subject mappings remain unchanged. New lecture assignments default to three per week.
 
-The original `app/demo.py` and every file under `sample_data/` are byte-for-byte unchanged. The dataset still has 24 subjects, 33 teachers, 9 divisions, 27 batches, 7 classrooms, and 6 laboratories. No mini-project entries are seeded. The original lab assignments, lecture distribution, college timings, recess, and no-gap constraints are preserved.
+Authorized arrangement: existing classrooms can host practicals for codes 2993511, 2993512, 2345511, and 2343611. Same-division batches with identical subject, professor and frequency share a session if combined seating fits. Other technical practicals still require labs. These assumptions are visible in generation and saved results; the original CSV is untouched.
 
-Room optimization first obtains a valid schedule, then reallocates lecture rooms with days, times, faculty, and non-lecture sessions fixed. It minimizes changes before the requested 2/3-period run and then total changes. Recess, laboratories, projects, and gaps reset a run. The result reports whether the room allocation was proven optimal for those fixed session times; constraints may prevent every preference from being met.
+Major Project is independent reserved student time with no teacher or room. Its source session counts/durations are preserved.
 
-Projects are created only through an explicit save. You choose their hours, supervisor, and an existing eligible room; the program does not enlarge rooms or create faculty automatically. Existing project assignments retain their original lab and duration behavior unless you edit them. Backups can retain the new project hours and room fields; earlier CSV files still import.
+Verified hints for the exact dataset are independently audited before reuse. Changed academic data triggers normal search. No clashes, internal gaps, or early classroom switches are accepted as successful results. Original exclusive-lab mode remains available and reports capacity shortages.
 
-The assistant is read-only. Local checks inspect saved plans and audit proposed replacement rooms against capacity, eligibility, and bookings. Historical timetables are evaluated separately. Optional OpenAI mode explains those facts; setup and data-sharing details are in README.md.
-
-See START_HERE.txt for Windows startup and carrying your existing data folder into this update.
+Test-only historical regression fixtures are excluded from the downloadable ZIP.

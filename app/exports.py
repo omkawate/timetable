@@ -61,11 +61,11 @@ def views(generation, view='group', target=None, batch=None):
                 for e in matches:
                     subject,group=maps['subjects'][e['subject_id']],maps['groups'][e['group_id']]
                     kind=e['kind'].upper()+(' · ELECTIVE' if subject['elective'] else '')
-                    who=maps['teachers'][e['teacher_id']]['name'] if view=='group' else f"{maps['departments'][group['department_id']]['code']} · Sem {group['semester']} · Div {group['division']}"
+                    who=maps['teachers'].get(e['teacher_id'],{}).get('name','') if view=='group' else f"{maps['departments'][group['department_id']]['code']} · Sem {group['semester']} · Div {group['division']}"
                     if room_view:
-                        who+='\n'+maps['teachers'][e['teacher_id']]['name']
+                        who+='\n'+maps['teachers'].get(e['teacher_id'],{}).get('name','')
                     batch_label=' · '+maps['batches'][e['batch_id']]['name'] if e.get('batch_id') else ''
-                    texts.append(f"{subject['code']} · {kind}\n{subject['name']}\n{who}{batch_label}\n{maps['rooms'][e['room_id']]['name']}")
+                    texts.append(f"{subject['code']} · {kind}\n{subject['name']}\n{who}{batch_label}\n{maps['rooms'].get(e['room_id'],{}).get('name','')}")
                 cells.append('\n—\n'.join(texts))
             grid.append(cells)
         output.append((title,grid,sum(e['duration']*settings.period_minutes/60 for e in selected)))

@@ -1,27 +1,28 @@
-UNISCHED - UPDATE OF YOUR SUPPLIED time.zip
+UNISCHED — OFFICIAL CSV UPDATE
 
-1. Extract the entire ZIP into a new folder.
-2. If you have existing saved work, stop the old server and COPY its complete
-   data folder into the new project folder before starting. Keep the old folder
-   as a backup. Do not copy the old .venv folder.
-3. Double-click start_windows.bat. Use 64-bit Python 3.11 or 3.12.
-4. Open http://127.0.0.1:8000 and press Ctrl+F5 to refresh cached website files.
-   Keep the command window open while using UniSched.
+1. Extract the ZIP into a NEW folder. Keep your previous project as backup.
+2. Do NOT copy the old data folder if you want the supplied official CSV loaded.
+3. Double-click start_windows.bat (64-bit Python 3.11 or 3.12 required).
+4. Open http://127.0.0.1:8000 and press Ctrl+F5. Keep the command window open.
 
-WHERE THE CHANGES ARE
-- AI Chat: purple floating button at the bottom-right, including the home page.
-  Also accessible through AI chat assistant in the left sidebar.
-- Mini projects: separate left-sidebar page. No project data has been added.
-  Add a project only when you want one, then generate a new timetable.
-- Classroom optimization: Generate timetable > Classroom continuity preference.
-  Choose 2 or 3 consecutive lecture periods in one classroom, or Flexible.
-- All batches: separate labelled cards; overlapping text has been fixed.
+Generate by division: choose 9:00 or 10:00 start, and minimum 2 or 3
+consecutive lecture periods before changing rooms. Recess resets this rule.
+Tutorials: separate sidebar tab; supplied batch tutorials retain room 710.
+AI chat: purple floating button on the home page and sidebar.
 
-DATA
-The supplied sample files and original dataset generator are unchanged.
-No subjects, teachers, rooms, labs, batches, or project entries were added or
-removed. Your original lab frequency and time-gap rules are retained.
-Existing saved timetable versions are not regenerated or overwritten.
-No need to import reference data again to use these features.
+Data: original uploaded CSV, unchanged. Practicals remain TWO HOURS and
+working days remain MONDAY–FRIDAY. Supplied lecture counts are unchanged.
+New lecture assignments default to 3 per week.
 
-Local chat works without a key. Optional OpenAI setup is in README.md.
+Keep the approved classroom/combined-batch option selected in Generate.
+It uses existing classrooms for Entrepreneurship, Environmental Science,
+India Knowledge System and Full Stack Java Mini-Project practicals; batches
+combine only with the same subject, professor and division when seats fit.
+All practicals still last two hours. The original CSV stays unchanged.
+Major Project reserves student time without any teacher or room booking.
+Verified placement hints are re-audited to speed up the exact supplied data.
+
+Existing databases are not overwritten automatically. To replace retained
+old data, back it up then use Import data > Preview supplied college data >
+Replace academic data. Historical saved timetables remain unchanged.
+See README.md for full details and manual setup commands.

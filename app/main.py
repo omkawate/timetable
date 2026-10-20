@@ -19,7 +19,7 @@ from .scheduler import generate, preflight
 from .exports import pdf, excel
 from .exchange import configuration_csv_v2, configuration_excel, parse_upload
 from .analytics import analyze
-from .demo import presentation_config
+from .demo import presentation_config, OFFICIAL_CSV
 from .calendar import Settings
 from .editing import edit_result
 from . import assistant
@@ -61,7 +61,10 @@ class GenerateRequest(BaseModel):
     group_ids: list[str] | None = Field(default=None, max_length=30)
     base_generation_id: int | None = Field(default=None, ge=1)
     continue_latest: bool = True
-    classroom_run_length: int | None = Field(default=None, ge=1, le=3, strict=True)
+    classroom_run_length: int | None = Field(default=None, ge=2, le=3, strict=True)
+
+    start_time: Literal['09:00','10:00'] | None = None
+    flexible_practicals: bool = True
 
     @field_validator('name')
     @classmethod
@@ -137,7 +140,7 @@ def export_configuration():
 
 @app.get('/api/sample.csv')
 def sample_csv():
-    return FileResponse(ROOT/'sample_data'/'unisched_semesters_3_5_7.csv', media_type='text/csv', filename='unisched_semesters_3_5_7.csv')
+    return FileResponse(OFFICIAL_CSV, media_type='text/csv', filename=OFFICIAL_CSV.name)
 
 @app.post('/api/import/preview')
 async def import_preview(file: UploadFile = File(...)):
@@ -170,8 +173,23 @@ def generate_timetable(payload: GenerateRequest):
     try:
         current = storage.get_config()
         config = Configuration(**current['configuration'])
-        if payload.classroom_run_length is not None:
-            config.settings.classroom_run_length = payload.classroom_run_length
+        settings = config.settings.model_dump()
+        settings['classroom_run_length'] = payload.classroom_run_length or 2
+        if payload.flexible_practicals:
+            settings['practical_classroom_codes'] = sorted(set(settings['practical_classroom_codes']) | {'2993511','2993512','2345511','2343611'})
+        if payload.start_time is not None and payload.start_time != settings['start']:
+            old_periods = config.settings.periods()
+            settings['start'] = payload.start_time
+            try:
+                new_periods = Settings(**{**settings, 'blocked': []}).periods()
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            settings['blocked'] = [{**b, 'slot': new_periods.index(old_periods[b['slot']])}
+                                   for b in settings['blocked'] if old_periods[b['slot']] in new_periods]
+        try:
+            config = Configuration(**{**config.model_dump(), 'settings': settings})
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         groups = [g for g in config.groups if (not payload.department_id or g.department_id == payload.department_id)
                   and (not payload.semester or g.semester == payload.semester)]
         if payload.group_ids is not None:
@@ -192,8 +210,30 @@ def generate_timetable(payload: GenerateRequest):
                     if saved['config']['settings']==config.settings.model_dump():
                         base=saved
                         break
-        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [])
+        seed=base
+        target_ids={g.id for g in groups}
+        if payload.continue_latest and (not seed or not target_ids<={e['group_id'] for e in seed['result']['entries']}):
+            # A prior room-allocation setting can seed the selected minimum; validate it again.
+            wanted={k:v for k,v in config.settings.model_dump().items() if k!='classroom_run_length'}
+            for candidate in storage.generations():
+                if candidate['status']=='feasible' and candidate['config_revision']==current['revision']:
+                    saved=storage.get_generation(candidate['id'])
+                    if target_ids<={e['group_id'] for e in saved['result']['entries']} and {k:v for k,v in saved['config']['settings'].items() if k!='classroom_run_length'}==wanted:
+                        seed=saved
+                        break
+        from .hints import reference_entries
+        prepared=seed['result']['entries'] if seed else reference_entries(config)
+        result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [],
+                          initial_entries=prepared)
+        result['scope']['verified_reference_hint']=bool(prepared and not seed)
+        result['scope']['seed_generation_id']=seed['id'] if seed else None
         result['scope']['base_generation_id'] = base['id'] if base else None
+        result['scheduling_options'] = {'start': config.settings.start,
+            'practical_hours': config.settings.lab_slots*config.settings.period_minutes/60,
+            'source_practical_hours': current['configuration']['settings']['lab_slots']*current['configuration']['settings']['period_minutes']/60,
+            'classroom_minimum': config.settings.classroom_run_length,
+            'classroom_practical_codes':config.settings.practical_classroom_codes,
+            'project_policy':'Unsupervised Major Project reserves student time only; no teacher or room booking.'}
         identifier = storage.save_generation(payload.name.strip() or 'Timetable', current['revision'], config.model_dump(), result)
         return storage.get_generation(identifier)
     finally:
@@ -230,7 +270,7 @@ class PlacementChange(BaseModel):
     entry_index: int = Field(ge=0, strict=True)
     day: int = Field(ge=0, le=6, strict=True)
     slot: int = Field(ge=0, le=15, strict=True)
-    room_id: str = Field(min_length=1,max_length=80)
+    room_id: str | None = Field(default=None,min_length=1,max_length=80)
 
 
 class ManualEdit(BaseModel):
@@ -295,9 +335,9 @@ def export_excel_data():
 @app.get('/api/demo/{format}')
 def demo_data(format: Literal['json','csv','xlsx']):
     config = presentation_config()
-    body = config.model_dump_json(indent=2) if format=='json' else configuration_csv_v2(config) if format=='csv' else configuration_excel(config)
+    body = config.model_dump_json(indent=2) if format=='json' else OFFICIAL_CSV.read_bytes() if format=='csv' else configuration_excel(config)
     return Response(body,media_type={'json':'application/json','csv':'text/csv','xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}[format],
-                    headers={'Content-Disposition':f'attachment; filename="it_presentation.{format}"'})
+                    headers={'Content-Disposition':f'attachment; filename="it_official_data.{format}"'})
 
 @app.get('/api/performance')
 def performance():

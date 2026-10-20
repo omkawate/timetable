@@ -2,7 +2,7 @@
 from copy import deepcopy
 import pytest
 from app.domain import Configuration, parse_csv
-from app.demo import presentation_config
+from regression_data import presentation_config
 from app.exchange import configuration_csv_v2
 from app.resources import session_specs, eligible_rooms
 from app.scheduler import generate
