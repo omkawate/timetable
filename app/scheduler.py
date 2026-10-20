@@ -188,7 +188,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
     for item in selected.offerings:
         teacher, subject, group = teachers.get(item.teacher_id), subjects[item.subject_id], groups[item.group_id]
         required = assumption('required_'+item.id,issue('ASSIGNMENT_CONFLICT',
-            f'{subject.code}, semester {group.semester} {group.division}, {teacher.name if teacher else 'Independent project'}: {item.lectures} lectures, {item.labs} labs, {item.projects} projects are part of the conflicting requirements.',
+            f'{subject.code}, semester {group.semester} {group.division}, {teacher.name if teacher else "Independent project"}: {item.lectures} lectures, {item.labs} labs, {item.projects} projects are part of the conflicting requirements.',
             'Review the listed assignments together. Adjust teacher availability, eligible rooms, session counts, or locked divisions.'))
         units = affected_units(selected,item)
         for kind,count,duration in session_specs(selected,item):

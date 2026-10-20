@@ -14,6 +14,7 @@ Data: original uploaded CSV, unchanged. Practicals remain TWO HOURS and
 working days remain MONDAY–FRIDAY. Supplied lecture counts are unchanged.
 New lecture assignments default to 3 per week.
 
+For the verified complete eight-division plan, choose 9:00 start.
 Keep the approved classroom/combined-batch option selected in Generate.
 It uses existing classrooms for Entrepreneurship, Environmental Science,
 India Knowledge System and Full Stack Java Mini-Project practicals; batches

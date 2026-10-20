@@ -41,7 +41,9 @@ The reference images show IKS classroom sessions, lecture room continuity, batch
 
 If you turn off the approved classroom/combined-batch option, the original exclusive-lab interpretation requires 246 lab-room hours against 240 at 9:00 or 210 at 10:00, and some faculty loads exceed their daily caps. The software explains this rather than shortening practicals or changing faculty limits.
 
-A verified placement hint for the exact supplied dataset avoids repeating an expensive search. It is a starting solution, **not extra academic data**. Every generation independently rechecks counts, capacities, faculty limits, combined sessions, gaps and classroom continuity. Academic edits invalidate its fingerprint and trigger a new search. Saved placements can also be reused after validation. All divisions are checked together for shared resources.
+The complete eight-division timetable is verified at the recommended **9:00 start**. A 10:00 start removes five periods from each week; the option is available, but a complete plan is not guaranteed within the search limit.
+
+A verified placement hint for the exact supplied dataset at 9:00 avoids repeating an expensive search. It is a starting solution, **not extra academic data**. Every generation independently rechecks counts, capacities, faculty limits, combined sessions, gaps and classroom continuity. Academic edits invalidate its fingerprint and trigger a new search. Saved placements can also be reused after validation. All divisions are checked together for shared resources.
 
 A start-time choice only selects the calendar for the new timetable. Teacher availability remains enforced; if it prevents that start, the result explains the conflict. Source CSV downloads are exact; current-data CSV/Excel/JSON exports include normalized tutorial fields. JSON and Excel preserve all identifiers and independent project records.
 
