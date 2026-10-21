@@ -1,0 +1,36 @@
+TIMETABLE — FINAL BATCH / FREE RESOURCE / COMBINED ELECTIVE UPDATE
+
+1. Extract this ZIP into a NEW folder. Keep your previous folder as backup.
+2. Keep the included data folder. It contains your latest uploaded official
+   database, byte-for-byte unchanged. Do not import the older sample CSV.
+3. Stop the old server. Double-click start_windows.bat in THIS new folder.
+   Requires 64-bit Python 3.11 or 3.12 and internet for dependency installation.
+4. Open http://127.0.0.1:8000 and press Ctrl+F5.
+5. Generate the complete department timetable, using the existing 09:00 start.
+   A verified placement hint for this exact data produces the new timetable.
+   Your older saved timetable remains available in Version history.
+
+CHANGES
+- Parallel practical batches are optimized while keeping all required hours.
+  Two-hour labs still use laboratories; lectures still use classrooms.
+- Click "Free faculty & rooms" in any timetable slot. Check the entire
+  one-, two-, or four-period session. Faculty remaining limits are displayed.
+  Availability covers this saved plan, not external duties or unscheduled groups.
+- Combined final-year A+B: 60 IS students and 60 STQA students, at the same
+  times in different classrooms, three sessions on different days.
+- Other final-year sessions stay where possible. The verified result retains
+  43 of 52 non-elective sessions at exactly their original time AND room.
+  Nine sessions moved. No faculty, subject, count, duration or capacity changed.
+- Manual edits are audited. Moving one combined option's time moves both
+  options and both division copies; changing its room updates that option only.
+
+VALIDATION
+All eight divisions generated; zero audited conflicts; two-hour labs retained;
+zero early classroom changes. Partially occupied batch periods fell from 57
+ to 17 (across second and third year). Full parallelism is not guaranteed;
+remaining slots depend on the same teachers, tutorials and other constraints.
+The search did not prove a globally optimal arrangement.
+
+Preview the verified result in docs/verified-timetables.pdf or .xlsx.
+See FINAL_CHANGES.md for details. Older reports describe earlier archives.
+Do not replace or delete data/unisched.db to apply this update.
