@@ -1,0 +1,3 @@
+Open Timetables and select a generated timetable. Each teaching slot shows free faculty, classroom and lab counts. Click the green summary to show names. Check full session & faculty limits opens the detailed interval check. All bookings in the selected saved timetable are considered, including other divisions and batches and multi-period sessions. External duties and other saved versions are not combined. Scheduling, academic data and PDF/Excel exports are unchanged.
+
+To upgrade, stop the app and back up your existing folder. Extract this ZIP into a new folder, copy your existing data folder into it, and use your usual Windows startup script. Refresh the browser with Ctrl+F5.
