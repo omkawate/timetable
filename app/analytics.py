@@ -104,7 +104,7 @@ def analyze(record):
                     if load>=len(settings.days) and settings.available(day):
                         violations.append(f'Division {group.division}, {settings.days[day]}: required teaching day is empty.')
                     continue
-                if min(used) != settings.available(day)[0]:
+                if settings.start_at_opening and min(used) != settings.available(day)[0]:
                     violations.append(f'Division {group.division}, {settings.days[day]}: starts after the first available period.')
                 holes=sum(p not in used for p in settings.available(day) if min(used)<=p<=max(used))
                 gaps+=holes

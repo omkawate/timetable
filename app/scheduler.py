@@ -146,7 +146,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                     'Balanced practicals across working days, kept lectures on each practical day, and placed batch tutorials at the start or end of the student day.'
                 ] if settings.balanced_days else [])+[
                     'Revalidated compatible saved placements and saved them as a new draft.' if reused else 'Placed every requested lecture, lab, and project in the selected plan without teacher, student, or room collisions.',
-                    f'Kept student days consecutive from {settings.start}, excluding configured breaks and blocked periods. Days may finish early.',
+                    f'Kept student days consecutive within {settings.start}–{settings.end}, excluding breaks and blocked periods. '+('Every batch starts at college opening.' if settings.start_at_opening else 'Batches may arrive later; no internal gaps are allowed.'),
                     'Assigned only rooms with sufficient seats and matching department/year eligibility. Shared rooms are allocated dynamically when Auto is selected.',
                     'Combined A+B IS/STQA options run simultaneously in separate classrooms on different days.' if settings.combined_elective_students else 'Reserved separate elective periods within each department and semester, including across divisions.',
                     'Respected teacher coming/leaving times, daily and weekly limits, and lab/project eligibility. Sessions never cross breaks.',
@@ -184,6 +184,24 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                 for d in audit['student_days']: loads[d['group_id'],d['batch']]+=d['periods']
                 lower=max((math.ceil(n/len(days)) for n in loads.values()),default=0)
                 return success(seed,quality['classroom_changes']==0,peak_value,peak_value==lower,True)
+    # Find complete feasible times with compact intervals before enumerating
+    # room/time alternatives. Aligned starts are only a search heuristic: if
+    # they fail, retry the full legal start domain within the same time budget.
+    if not locked and pool_instruction_rooms and settings.classroom_run_length>=2:
+        from .interval_search import solve_intervals
+        from .analytics import analyze
+        remaining=max(.001,time_limit-(time.monotonic()-started))
+        compact=solve_intervals(selected,remaining*.6,random_seed if random_seed is not None else 42,aligned_labs=True)
+        if compact is not None and compact['status']!='feasible':
+            remaining=max(.001,time_limit-(time.monotonic()-started))
+            compact=solve_intervals(selected,remaining*.9,random_seed if random_seed is not None else 42,aligned_labs=False)
+        if compact is not None and compact['status']=='feasible':
+            output=success(compact['entries'],False,compact['peak'],False)
+            audit=analyze({'config':selected.model_dump(),'result':output})
+            if not audit['hard_conflicts']:
+                output['summary']['algorithm']='Google OR-Tools CP-SAT · compact intervals'
+                output['summary']['optimization_proven']=False
+                return output
     shared_rooms=instructional_room_pool(selected,locked) if pool_instruction_rooms and settings.classroom_run_length>=2 else None
     lab_pool=interchangeable_labs(selected,locked)
     lab_ids={r.id for r in lab_pool} if lab_pool else set()
@@ -294,7 +312,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
     lower_bound = 0
     for group in selected.groups:
         no_gaps = assumption('no_gaps_'+group.id,issue('CONTIGUOUS_DAY',
-            f'Semester {group.semester} {group.division} must start at {settings.start} with no internal gaps except configured breaks/blocked periods.',
+            f'Semester {group.semester} {group.division} needs a consecutive student day with no internal gaps.',
             'Make teachers and rooms available at the start of the day, or adjust assignments, the calendar, or locked divisions.'))
         for unit in student_units(selected,group):
             load = sum(teaching_slots(selected,o) for o in selected.offerings if unit in affected_units(selected,o))
@@ -305,10 +323,18 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                     value = model.NewBoolVar(f'busy_{unit}_{day}_{slot}')
                     model.Add(value == sum(coverage['student',unit,day,slot]))
                     busy.append(value)
-                for a,b in zip(busy,busy[1:]):
-                    model.Add(a >= b).OnlyEnforceIf(no_gaps)
+                if settings.start_at_opening:
+                    for a,b in zip(busy,busy[1:]):
+                        model.Add(a >= b).OnlyEnforceIf(no_gaps)
+                elif busy:
+                    starts=[busy[0]]
+                    for a,b in zip(busy,busy[1:]):
+                        change=model.NewBoolVar('student_day_start')
+                        model.Add(change>=b-a)
+                        starts.append(change)
+                    model.Add(sum(starts)<=1).OnlyEnforceIf(no_gaps)
                 if load >= len(days) and busy:
-                    model.Add(busy[0] == 1).OnlyEnforceIf(no_gaps)
+                    model.Add((busy[0] if settings.start_at_opening else sum(busy)) >= 1).OnlyEnforceIf(no_gaps)
                 model.Add(sum(busy) <= peak)
     if settings.balanced_days:
         # Keep practicals distributed and mix theory into every practical day.
@@ -331,7 +357,10 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                     available=settings.available(e['day'])
                     if available and e['slot']!=available[0]:
                         later=[sum(coverage['student',unit,e['day'],q]) for q in available if q>=e['slot']+e['duration']]
-                        model.Add(sum(later)==0).OnlyEnforceIf(v)
+                        earlier=[sum(coverage['student',unit,e['day'],q]) for q in available if q<e['slot']]
+                        edge=model.NewBoolVar('tutorial_day_edge')
+                        model.Add(sum(earlier)==0).OnlyEnforceIf([v,edge])
+                        model.Add(sum(later)==0).OnlyEnforceIf([v,edge.Not()])
     penalties=[]
     if settings.prefer_parallel_batches:
         for group in selected.groups:

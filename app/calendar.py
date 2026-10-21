@@ -39,6 +39,7 @@ class Settings(BaseModel):
     blocked: list[Block] = Field(default_factory=list, max_length=40)
     # Legacy backup field, retained for import compatibility only. Labs always use labs.
     practical_classroom_codes: list[str] = Field(default_factory=list, max_length=100)
+    start_at_opening: bool = True
     balanced_days: bool = False
     prefer_parallel_batches: bool = False
     combined_elective_students: dict[str, int] = Field(default_factory=dict)

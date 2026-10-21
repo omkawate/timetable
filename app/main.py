@@ -55,13 +55,14 @@ class ConfigUpdate(BaseModel):
 
 class GenerateRequest(BaseModel):
     name: str = Field(default='Odd semester timetable', min_length=1, max_length=80)
-    time_limit: int = Field(default=20, ge=5, le=120)
+    time_limit: int = Field(default=120, ge=5, le=300)
     department_id: str | None = None
     semester: int | None = Field(default=None, ge=1, le=8)
     group_ids: list[str] | None = Field(default=None, max_length=30)
     base_generation_id: int | None = Field(default=None, ge=1)
     continue_latest: bool = True
     balanced_days: bool = True
+    start_at_opening: bool = False
     classroom_run_length: int | None = Field(default=None, ge=2, le=3, strict=True)
 
     start_time: Literal['09:00','10:00'] | None = None
@@ -180,6 +181,7 @@ def generate_timetable(payload: GenerateRequest):
         settings['practical_classroom_codes'] = []
         settings['prefer_parallel_batches'] = True
         settings['balanced_days'] = payload.balanced_days
+        settings['start_at_opening'] = payload.start_at_opening
         settings['combined_elective_students'] = {'IS':60,'STQA':60} if any(g.semester==7 for g in config.groups) else {}
         if payload.start_time is not None and payload.start_time != settings['start']:
             old_periods = config.settings.periods()
@@ -246,6 +248,7 @@ def generate_timetable(payload: GenerateRequest):
             'source_practical_hours': current['configuration']['settings']['lab_slots']*current['configuration']['settings']['period_minutes']/60,
             'classroom_minimum': config.settings.classroom_run_length,
             'balanced_days': config.settings.balanced_days,
+            'start_at_opening': config.settings.start_at_opening,
             'hours_adjustment': 'Original practical durations retained. Every batch reserves a separate laboratory and teacher booking.',
             'classroom_practical_codes':config.settings.practical_classroom_codes,
             'project_policy':'Unsupervised Major Project reserves student time only; no teacher or room booking.'}
