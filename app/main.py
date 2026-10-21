@@ -61,6 +61,8 @@ class GenerateRequest(BaseModel):
     group_ids: list[str] | None = Field(default=None, max_length=30)
     base_generation_id: int | None = Field(default=None, ge=1)
     continue_latest: bool = True
+    reuse_previous: bool = True
+    config_revision: int | None = Field(default=None, ge=0)
     balanced_days: bool = True
     start_at_opening: bool = False
     classroom_run_length: int | None = Field(default=None, ge=2, le=3, strict=True)
@@ -175,6 +177,8 @@ def generate_timetable(payload: GenerateRequest):
         raise HTTPException(409, 'A timetable is already being generated. Please wait for it to finish.')
     try:
         current = storage.get_config()
+        if payload.config_revision is not None and payload.config_revision != current['revision']:
+            raise HTTPException(409, 'Academic data changed before generation started. Reload and generate again.')
         config = Configuration(**current['configuration'])
         settings = config.settings.model_dump()
         settings['classroom_run_length'] = payload.classroom_run_length or 2
@@ -230,9 +234,18 @@ def generate_timetable(payload: GenerateRequest):
                     if target_ids<={e['group_id'] for e in saved['result']['entries']} and {k:v for k,v in saved['config']['settings'].items() if k not in ('classroom_run_length','prefer_parallel_batches','combined_elective_students')}==wanted:
                         seed=saved
                         break
+        # Reuse exact successful inputs even when preservation of other divisions
+        # is off. Revalidate through the scheduler; never mutate the original plan.
+        if payload.reuse_previous and not (seed and target_ids<={e['group_id'] for e in seed['result']['entries']} and seed['config']==config.model_dump()):
+            for candidate in storage.generations():
+                if candidate['status']!='feasible':continue
+                saved=storage.get_generation(candidate['id'])
+                if saved and saved['config']==config.model_dump() and target_ids<={e['group_id'] for e in saved['result']['entries']}:
+                    seed=saved
+                    break
         from .hints import reference_entries
         compatible_seed=bool(seed and seed['config']['settings']==config.settings.model_dump())
-        prepared=seed['result']['entries'] if compatible_seed else reference_entries(config) or (seed['result']['entries'] if seed else None)
+        prepared=(seed['result']['entries'] if compatible_seed else reference_entries(config) or (seed['result']['entries'] if seed else None)) if payload.reuse_previous else None
         result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [],
                           initial_entries=prepared, reuse_requested=compatible_seed)
         if result['status'] == 'feasible':
@@ -256,6 +269,24 @@ def generate_timetable(payload: GenerateRequest):
         return storage.get_generation(identifier)
     finally:
         generation_lock.release()
+
+from . import generation_jobs
+
+@app.post('/api/generation-jobs')
+def start_generation_job(payload: GenerateRequest):
+    revision=storage.get_config()['revision']
+    if payload.config_revision is not None and payload.config_revision!=revision:
+        raise HTTPException(409,'Academic data changed in another window. Reload before generating.')
+    payload=payload.model_copy(update={'config_revision':revision})
+    return generation_jobs.submit(payload,generate_timetable)
+
+@app.get('/api/generation-jobs/active')
+def active_generation_job():
+    return generation_jobs.active()
+
+@app.get('/api/generation-jobs/{identifier}')
+def generation_job(identifier: str):
+    return generation_jobs.get(identifier)
 
 @app.get('/api/generations/{identifier}')
 def generation_detail(identifier: int):
