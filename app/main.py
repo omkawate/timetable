@@ -234,13 +234,16 @@ def generate_timetable(payload: GenerateRequest):
                     if target_ids<={e['group_id'] for e in saved['result']['entries']} and {k:v for k,v in saved['config']['settings'].items() if k not in ('classroom_run_length','prefer_parallel_batches','combined_elective_students')}==wanted:
                         seed=saved
                         break
+        from .hints import scheduling_data
+        def same_schedule(saved):
+            return scheduling_data(Configuration(**saved['config'])) == scheduling_data(config)
         # Reuse exact successful inputs even when preservation of other divisions
         # is off. Revalidate through the scheduler; never mutate the original plan.
-        if payload.reuse_previous and not (seed and target_ids<={e['group_id'] for e in seed['result']['entries']} and seed['config']==config.model_dump()):
+        if payload.reuse_previous and not (seed and target_ids<={e['group_id'] for e in seed['result']['entries']} and same_schedule(seed)):
             for candidate in storage.generations():
                 if candidate['status']!='feasible':continue
                 saved=storage.get_generation(candidate['id'])
-                if saved and saved['config']==config.model_dump() and target_ids<={e['group_id'] for e in saved['result']['entries']}:
+                if saved and same_schedule(saved) and target_ids<={e['group_id'] for e in saved['result']['entries']}:
                     seed=saved
                     break
         from .hints import reference_entries
