@@ -9,7 +9,7 @@ from .domain import Configuration, CSV_FIELDS, parse_csv
 EXTRA_FIELDS = ['department_code','department_name','student_strength','teacher_daily_limit',
                 'teacher_email','teacher_short_code','teacher_lab_eligible','project_sessions_per_week',
                 'batch_name','batch_strength','elective_set','course_type','weekly_hours',
-                'classroom_pool','lab_pool','calendar_json','department_pool','teacher_department_code','elective_set_code','project_hours_per_session','project_room','tutorial_sessions_per_week','tutorial_room','tutorial_hours_per_session']
+                'classroom_pool','lab_pool','calendar_json','department_pool','teacher_department_code','elective_set_code','project_hours_per_session','project_room','tutorial_sessions_per_week','tutorial_room','tutorial_hours_per_session','lab_room_type']
 V2_FIELDS = CSV_FIELDS + EXTRA_FIELDS
 TABLES = ['departments','teachers','subjects','rooms','groups','batches','elective_sets','offerings']
 
@@ -34,7 +34,7 @@ def configuration_csv_v2(config):
         row = dict(zip(CSV_FIELDS,[g.semester,g.division,t.name,t.max_hours,t.arrival,t.departure,s.name,s.code,
             str(s.elective).lower(),m['rooms'][g.room_id].name if g.room_id else 'AUTO',
             m['rooms'][o.lab_room_id].name if o.lab_room_id else '',o.lectures,o.labs]))
-        row.update(department_code=dept.code,department_name=dept.name,student_strength=g.strength,
+        row.update(lab_room_type=o.lab_room_type,department_code=dept.code,department_name=dept.name,student_strength=g.strength,
             teacher_daily_limit=t.max_daily_slots,teacher_email=t.email,teacher_short_code=t.short_code,
             teacher_lab_eligible=str(t.lab_eligible).lower(),project_sessions_per_week=o.projects,project_hours_per_session=o.project_hours,project_room=m['rooms'][o.project_room_id].name if o.project_room_id else '',
             tutorial_sessions_per_week=o.tutorials,tutorial_room=m['rooms'][o.tutorial_room_id].name if o.tutorial_room_id else '',tutorial_hours_per_session=o.tutorial_hours,
@@ -173,7 +173,7 @@ def parse_extended_csv(content):
                 'tutorial_room_id':tutorial_room,'tutorial_hours':float(row['tutorial_hours_per_session']) if row.get('tutorial_hours_per_session') else None,
                 'projects':int(row['project_sessions_per_week'] or 0),
                 'project_room_id':room_id(row.get('project_room',''),'any'),
-                'project_hours':float(row['project_hours_per_session']) if row.get('project_hours_per_session') else None,'batch_id':batch,'lab_room_id':lab})
+                'project_hours':float(row['project_hours_per_session']) if row.get('project_hours_per_session') else None,'batch_id':batch,'lab_room_id':lab,'lab_room_type':row.get('lab_room_type') or 'lab'})
         except (KeyError,ValueError,TypeError) as exc:
             raise ValueError(f'CSV row {number}: {exc}') from exc
     return Configuration(**data)

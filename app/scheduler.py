@@ -52,7 +52,7 @@ def preflight(config: Configuration):
             teacher_slots[item.teacher_id] += count*duration
             rooms = eligible_rooms(config,item,kind)
             if not rooms:
-                room_type = 'classroom' if kind in ('lecture','tutorial') else 'lab'
+                room_type = 'classroom' if kind in ('lecture','tutorial') else item.lab_room_type if kind == 'lab' else 'lab'
                 problems.append(issue('ROOM_ELIGIBILITY',f'{subject.code}, semester {group.semester} {group.division}: no eligible {room_type} fits the student strength, department, year, and selected room.',
                     'Add or select a room with sufficient capacity and matching department/year eligibility, or use smaller practical batches.'))
             if len(rooms) == 1:

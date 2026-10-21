@@ -44,7 +44,7 @@ def eligible_rooms(config, offering, kind):
     code=elective_code(config,offering) if kind=='lecture' else None
     if code: size=config.settings.combined_elective_students[code]
     fixed = offering.tutorial_room_id if kind == 'tutorial' else group.room_id if kind == 'lecture' else (offering.project_room_id or offering.lab_room_id) if kind == 'project' else offering.lab_room_id
-    expected = next(r.kind for r in config.rooms if r.id==offering.project_room_id) if kind == 'project' and offering.project_room_id else 'classroom' if kind in ('lecture','tutorial') else 'lab'
+    expected = next(r.kind for r in config.rooms if r.id==offering.project_room_id) if kind == 'project' and offering.project_room_id else 'classroom' if kind in ('lecture','tutorial') else offering.lab_room_type if kind == 'lab' else 'lab'
     return [room for room in config.rooms if room.kind == expected and (not fixed or room.id == fixed)
             and room.capacity >= size and room.department_id in (None, group.department_id)
             and (not room.eligible_years or (group.semester+1)//2 in room.eligible_years)]

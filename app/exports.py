@@ -67,7 +67,7 @@ def views(generation, view='group', target=None, batch=None):
                 texts=[]
                 for e in matches:
                     subject,group=maps['subjects'][e['subject_id']],maps['groups'][e['group_id']]
-                    kind='COMBINED A+B ELECTIVE' if elective_entry(config,e) else e['kind'].upper()+(' · ELECTIVE' if subject['elective'] else '')
+                    kind='COMBINED A+B ELECTIVE' if elective_entry(config,e) else ('CLASSROOM PRACTICAL' if e['kind']=='lab' and next(o for o in config.offerings if o.id==e['offering_id']).lab_room_type=='classroom' else e['kind'].upper())+(' · ELECTIVE' if subject['elective'] else '')
                     who=maps['teachers'].get(e['teacher_id'],{}).get('name','') if view=='group' else f"{maps['departments'][group['department_id']]['code']} · Sem {group['semester']} · Div {group['division']}"
                     if room_view:
                         who+='\n'+maps['teachers'].get(e['teacher_id'],{}).get('name','')

@@ -101,6 +101,7 @@ class Offering(Record):
     lectures: int = Field(ge=0, le=40, strict=True)
     labs: int = Field(ge=0, le=20, strict=True)
     lab_room_id: str | None = None
+    lab_room_type: str = Field(default="lab", pattern=r"^(lab|classroom)$")
     projects: int = Field(default=0, ge=0, le=20, strict=True)
     batch_id: str | None = None
     tutorials: int = Field(default=0, ge=0, le=40, strict=True)
@@ -205,6 +206,8 @@ class Configuration(BaseModel):
                 raise ValueError(f'Assignment {item.id} references an invalid lab batch.')
             if item.project_room_id and item.project_room_id not in rooms:
                 raise ValueError(f'Assignment {item.id} references an invalid project room.')
+            if item.lab_room_type == "classroom" and item.lab_room_id:
+                raise ValueError("Auto classroom cannot also specify a fixed laboratory.")
             if item.lab_room_id and (item.lab_room_id not in rooms or rooms[item.lab_room_id].kind != 'lab'):
                 raise ValueError(f'Assignment {item.id} references an invalid laboratory.')
             pair = (item.group_id, item.subject_id, item.batch_id)
