@@ -1,165 +1,107 @@
+"""Horizontal timetable exports; scheduling and saved entries are not modified."""
 import io
+from pathlib import Path
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from html import escape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4, A3, landscape
+from reportlab.lib.pagesizes import A3, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from .domain import COLLEGE, Configuration
-from .calendar import clock, minutes
-from .resources import elective_entry, booking_key
+from .domain import COLLEGE
+from .presentation import layouts,calendar_rows
 
-
-def calendar_rows(settings):
-    rows=[{'time':start+'–'+end,'slot':slot} for slot,(start,end) in enumerate(settings.periods())]
-    rows += [{'time':pause.start+'–'+clock(minutes(pause.start)+pause.duration),'break':pause.name} for pause in settings.breaks]
-    return sorted(rows,key=lambda row:row['time'])
-
-
-def views(generation, view='group', target=None, batch=None):
-    config=Configuration(**generation['config'])
-    data=config.model_dump()
-    settings=config.settings
-    entries=generation['result']['entries']
-    if batch:
-        selected_batch=next((b for b in config.batches if b.id==batch),None)
-        if view!='group' or not selected_batch or selected_batch.group_id!=target:
-            raise ValueError('Choose a batch belonging to the selected division.')
-        entries=[e for e in entries if not e.get('batch_id') or e['batch_id']==batch]
-    scheduled={e['group_id'] for e in entries}
-    if view not in ('group','teacher','classroom','lab'):
-        raise ValueError('Choose a division, professor, classroom, or lab view.')
-    room_view=view in ('classroom','lab')
-    key='rooms' if room_view else 'groups' if view=='group' else 'teachers'
-    records=[item for item in data[key] if (not target or item['id']==target) and (view!='group' or item['id'] in scheduled) and (not room_view or item['kind']==view)]
-    if not records:
-        raise ValueError('The selected division, professor, classroom, or lab is not in this saved timetable.')
-    maps={name:{x['id']:x for x in data[name]} for name in ('teachers','subjects','groups','rooms','departments','batches')}
-    output=[]
-    for record in records:
-        title=(f"{maps['departments'][record['department_id']]['code']} · Semester {record['semester']} · Division {record['division']}"
-               if view=='group' else record['name'])
-        if batch:
-            title+=' · Batch '+selected_batch.name
-        selected=[e for e in entries if e['room_id' if room_view else view+'_id']==record['id']]
-        if view!='group':
-            seen=set();unique=[];offerings={o.id:o for o in config.offerings}
-            for e in selected:
-                identity=(booking_key(config,offerings[e['offering_id']],e['kind']),e['day'],e['slot'],e['duration'],e['room_id'])
-                if identity not in seen: unique.append(e);seen.add(identity)
-            selected=unique
-        grid=[['Time',*settings.days]]
-        for row in calendar_rows(settings):
-            if 'break' in row:
-                grid.append([row['time'], *[row['break'].upper()]*len(settings.days)])
-                continue
-            slot=row['slot']
-            cells=[row['time']]
-            for day in range(len(settings.days)):
-                blocked=next((b for b in settings.blocked if b.day==settings.days[day] and b.slot==slot),None)
-                if blocked:
-                    cells.append('BLOCKED\n'+blocked.reason)
-                    continue
-                matches=[e for e in selected if e['day']==day and e['slot']<=slot<e['slot']+e['duration']]
-                texts=[]
-                for e in matches:
-                    subject,group=maps['subjects'][e['subject_id']],maps['groups'][e['group_id']]
-                    kind='COMBINED A+B ELECTIVE' if elective_entry(config,e) else ('CLASSROOM PRACTICAL' if e['kind']=='lab' and next(o for o in config.offerings if o.id==e['offering_id']).lab_room_type=='classroom' else e['kind'].upper())+(' · ELECTIVE' if subject['elective'] else '')
-                    who=maps['teachers'].get(e['teacher_id'],{}).get('name','') if view=='group' else f"{maps['departments'][group['department_id']]['code']} · Sem {group['semester']} · Div {group['division']}"
-                    if room_view:
-                        who+='\n'+maps['teachers'].get(e['teacher_id'],{}).get('name','')
-                    batch_label=' · '+maps['batches'][e['batch_id']]['name'] if e.get('batch_id') else ''
-                    texts.append(f"{subject['code']} · {kind}\n{subject['name']}\n{who}{batch_label}\n{maps['rooms'].get(e['room_id'],{}).get('name','')}")
-                cells.append('\n—\n'.join(texts))
-            grid.append(cells)
-        output.append((title,grid,sum(e['duration']*settings.period_minutes/60 for e in selected)))
-    return output
+FONT_DIR=Path(__file__).resolve().parent.parent/'static'/'fonts'
+pdfmetrics.registerFont(TTFont('TimetableSans',str(FONT_DIR/'DejaVuSans.ttf')))
+pdfmetrics.registerFont(TTFont('TimetableSans-Bold',str(FONT_DIR/'DejaVuSans-Bold.ttf')))
 
 
 def workflow_label(generation):
-    workflow=generation.get('workflow',{'state':'draft','locked':False})
-    return workflow['state'].upper()+(' · LOCKED' if workflow['locked'] else '')
+    w=generation.get('workflow',{'state':'draft','locked':False})
+    return w['state'].upper()+(' · LOCKED' if w['locked'] else '')
+
+
+def matrix(layout):
+    data=[['']*(len(layout['columns'])+1) for _ in range(layout['row_count'])]
+    data[0]=['DAYS']+[('RECESS' if 'break' in c else 'P'+str(c['slot']+1))+'\n'+c['time'] for c in layout['columns']]
+    for cell in layout['cells']:data[cell['row']][cell['col']]=cell['text']
+    return data
+
+
+def views(generation,view='group',target=None,batch=None):
+    return [(x['title'],matrix(x),x['hours']) for x in layouts(generation,view,target,batch)]
 
 
 def excel(generation,view='group',target=None,batch=None):
-    workbook=Workbook()
-    workbook.remove(workbook.active)
-    for index,(title,grid,hours) in enumerate(views(generation,view,target,batch),1):
-        sheet=workbook.create_sheet(f'{index} '+{'group':'Division','teacher':'Professor','classroom':'Classroom','lab':'Lab'}[view])
-        columns=len(grid[0])
-        last=get_column_letter(columns)
-        for row,text in [(1,COLLEGE),(2,f'UniSched | {title} | {workflow_label(generation)}'),(3,f"{generation['name']} | {hours:g} scheduled teaching hours / week")]:
-            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=columns)
-            cell=sheet.cell(row,1,text)
-            cell.data_type='s'
-            cell.font=Font(name='Calibri',size=14 if row==1 else 11,bold=row!=3,color='252645')
-            cell.alignment=Alignment(horizontal='center',vertical='center')
-            sheet.row_dimensions[row].height=25
-        settings=Configuration(**generation['config']).settings
-        break_names={b.name.upper() for b in settings.breaks}
-        for r,values in enumerate(grid,5):
-            pause=all(value in break_names for value in values[1:])
-            for c,value in enumerate(values,1):
-                cell=sheet.cell(r,c,value)
-                cell.data_type='s'
-                cell.alignment=Alignment(wrap_text=True,vertical='center',horizontal='center')
-                cell.font=Font(name='Calibri',size=10,color='FFFFFF' if r==5 else '252645',bold=r==5 or c==1)
-                cell.fill=PatternFill('solid',fgColor='5046D6' if r==5 else 'F0EEFF' if pause else 'F6F7FB')
-                cell.border=Border(bottom=Side(style='thin',color='DFE2EB'))
-            sheet.row_dimensions[r].height=25 if r==5 or pause else max(78,max(value.count('\n') for value in values)*13+20)
-        sheet.column_dimensions['A'].width=19
-        for c in range(2,columns+1):
-            sheet.column_dimensions[get_column_letter(c)].width=32
-        sheet.freeze_panes='B6'
-        sheet.sheet_view.showGridLines=False
-        sheet.page_setup.orientation='landscape'
-        sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
-        sheet.page_setup.fitToWidth=1
-        sheet.page_setup.fitToHeight=1
-        sheet.sheet_properties.pageSetUpPr.fitToPage=True
-        sheet.print_options.horizontalCentered=True
-        sheet.print_area=f'A1:{last}{len(grid)+4}'
-        sheet.oddFooter.center.text='UniSched · &P / &N'
-    output=io.BytesIO()
-    workbook.save(output)
-    return output.getvalue()
+    wb=Workbook();wb.remove(wb.active)
+    for index,layout in enumerate(layouts(generation,view,target,batch),1):
+        sheet=wb.create_sheet(f'{index} '+{'group':'Division','teacher':'Professor','classroom':'Classroom','lab':'Lab'}[view]);n=len(layout['columns'])+1
+        for row,text in [(1,COLLEGE),(2,layout['title']),(3,generation['name']+' · '+workflow_label(generation))]:
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=n)
+            cell=sheet.cell(row,1,text);cell.data_type='s';cell.font=Font(name='Calibri',size=16 if row==1 else 12,bold=True);cell.alignment=Alignment(horizontal='center',vertical='center');sheet.row_dimensions[row].height=25
+        for r,values in enumerate(matrix(layout),5):
+            sheet.row_dimensions[r].height=36 if r==5 else 32
+            for c,text in enumerate(values,1):
+                cell=sheet.cell(r,c,text);cell.data_type='s';cell.font=Font(name='Calibri',size=11,bold=r==5 or c==1)
+                cell.alignment=Alignment(horizontal='center',vertical='center',wrap_text=True)
+                cell.border=Border(**{s:Side(style='thin',color='333333') for s in ['top','bottom','left','right']})
+                if r==5:cell.fill=PatternFill('solid',fgColor='EDEDF5')
+        for cell in layout['cells']:
+            r=cell['row']+5;c=cell['col']+1
+            if cell['rowspan']>1 or cell['colspan']>1:sheet.merge_cells(start_row=r,start_column=c,end_row=r+cell['rowspan']-1,end_column=c+cell['colspan']-1)
+            if cell['kind']=='break':sheet.cell(r,c).fill=PatternFill('solid',fgColor='EEEAF8');sheet.cell(r,c).alignment=Alignment(horizontal='center',vertical='center',textRotation=90)
+            if cell['rowspan']==1 and cell['text']:sheet.row_dimensions[r].height=max(sheet.row_dimensions[r].height,16*(cell['text'].count('\n')+1)+12)
+        end=layout['row_count']+6
+        legend_start=end
+        bounds=[1,1+n//3,1+2*n//3,n+1]
+        for i,legend in enumerate(layout['legends']):
+            first,last=bounds[i],bounds[i+1]-1
+            for offset,text in enumerate([legend['title']]+legend['items']):
+                row=legend_start+offset
+                sheet.merge_cells(start_row=row,start_column=first,end_row=row,end_column=last)
+                cell=sheet.cell(row,first,text);cell.data_type='s';cell.font=Font(name='Calibri',bold=offset==0,size=11)
+                cell.alignment=Alignment(wrap_text=True,vertical='center')
+                cell.border=Border(bottom=Side(style='hair',color='AAAAAA'))
+                if offset==0:cell.fill=PatternFill('solid',fgColor='EDEDF5')
+                sheet.row_dimensions[row].height=max(sheet.row_dimensions[row].height or 0,32)
+            end=max(end,legend_start+len(legend['items'])+1)
+        sheet.column_dimensions['A'].width=9
+        for i,col in enumerate(layout['columns'],2):sheet.column_dimensions[get_column_letter(i)].width=9 if 'break' in col else 19
+        sheet.freeze_panes='B6';sheet.sheet_view.showGridLines=False
+        sheet.page_setup.orientation='landscape';sheet.page_setup.paperSize=sheet.PAPERSIZE_A3
+        sheet.page_setup.fitToWidth=1;sheet.page_setup.fitToHeight=0
+        sheet.sheet_properties.pageSetUpPr.fitToPage=True;sheet.print_options.horizontalCentered=True
+        sheet.print_title_rows='1:5';sheet.print_area=f'A1:{get_column_letter(n)}{end-1}'
+    out=io.BytesIO();wb.save(out);return out.getvalue()
 
 
 def pdf(generation,view='group',target=None,batch=None):
-    output=io.BytesIO()
-    large=view=='group' and bool(generation['config'].get('batches')) and not batch
-    document=SimpleDocTemplate(output,pagesize=landscape(A3 if large else A4),leftMargin=24,rightMargin=24,topMargin=20,bottomMargin=20,title='UniSched timetable',author=COLLEGE)
-    heading=ParagraphStyle('heading',fontName='Helvetica-Bold',fontSize=13,leading=17,textColor=colors.HexColor('#252645'),alignment=TA_CENTER)
-    subheading=ParagraphStyle('subheading',fontName='Helvetica',fontSize=9,leading=13,alignment=TA_CENTER)
-    cellstyle=ParagraphStyle('cell',fontName='Helvetica',fontSize=6.2 if large else 6.8,leading=6.8 if large else 8.2,alignment=TA_CENTER)
-    headerstyle=ParagraphStyle('header',parent=cellstyle,fontName='Helvetica-Bold',textColor=colors.white)
+    out=io.BytesIO();doc=SimpleDocTemplate(out,pagesize=landscape(A3),leftMargin=25,rightMargin=25,topMargin=24,bottomMargin=24)
+    heading=ParagraphStyle('heading',fontName='TimetableSans-Bold',fontSize=16,leading=20,alignment=TA_CENTER)
+    normal=ParagraphStyle('normal',fontName='TimetableSans',fontSize=11,leading=14,alignment=TA_CENTER)
+    cellstyle=ParagraphStyle('cell',parent=normal,fontSize=11,leading=14)
+    legendstyle=ParagraphStyle('legend',fontName='TimetableSans',fontSize=10,leading=13)
+    para=lambda text,style:Paragraph(escape(text).replace('\n','<br/>'),style)
     story=[]
-    settings=Configuration(**generation['config']).settings
-    break_names={b.name.upper() for b in settings.breaks}
-    for index,(title,grid,hours) in enumerate(views(generation,view,target,batch)):
-        if index:
-            story.append(PageBreak())
-        story += [Paragraph(escape(COLLEGE),heading),Spacer(1,5),Paragraph(escape(f"UniSched | {title} | {generation['name']} | {workflow_label(generation)}"),subheading),
-                  Paragraph(escape(f"{hours:g} scheduled teaching hours/week · {settings.start}–{settings.end}"),subheading),Spacer(1,10)]
-        table=Table([[Paragraph(escape(value).replace('\n','<br/>'),headerstyle if r==0 else cellstyle) for value in row] for r,row in enumerate(grid)],
-                    colWidths=[74]+[(document.width-74)/(len(grid[0])-1)]*(len(grid[0])-1),repeatRows=1)
-        commands=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#5046D6')),
-                  ('BACKGROUND',(0,1),(-1,-1),colors.HexColor('#F7F8FC')),
-                  ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('GRID',(0,0),(-1,-1),.4,colors.HexColor('#DDE0E9')),
-                  ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
-                  ('TOPPADDING',(0,0),(-1,-1),2 if large else 7),('BOTTOMPADDING',(0,0),(-1,-1),2 if large else 7)]
-        for r,row in enumerate(grid[1:],1):
-            if all(value in break_names for value in row[1:]):
-                commands.append(('BACKGROUND',(0,r),(-1,r),colors.HexColor('#EDEBFF')))
-        table.setStyle(TableStyle(commands))
-        story += [table,Spacer(1,7),Paragraph('Empty cells indicate no scheduled teaching. Multi-period sessions repeat across their occupied periods. Batch sessions are identified by name.',subheading)]
-    def footer(canvas,doc):
-        canvas.saveState()
-        canvas.setFont('Helvetica',6)
-        canvas.drawCentredString(doc.pagesize[0]/2,10,COLLEGE+' | '+workflow_label(generation))
-        canvas.restoreState()
-    document.build(story,onFirstPage=footer,onLaterPages=footer)
-    return output.getvalue()
+    for index,layout in enumerate(layouts(generation,view,target,batch)):
+        if index:story.append(PageBreak())
+        story.extend([para(COLLEGE,heading),para(layout['title'],normal),para(generation['name']+' · '+workflow_label(generation),normal),Spacer(1,12)])
+        weights=[.6]+[.75 if 'break' in c else 1 for c in layout['columns']];widths=[doc.width*w/sum(weights) for w in weights]
+        grid=[[para(text,cellstyle) for text in row] for row in matrix(layout)]
+        table=Table(grid,colWidths=widths,repeatRows=1,minRowHeights=[36]+[24]*(len(grid)-1))
+        commands=[('GRID',(0,0),(-1,-1),.6,colors.HexColor('#333333')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#EDEDF5')),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4)]
+        for c in layout['cells']:
+            if c['rowspan']>1 or c['colspan']>1:commands.append(('SPAN',(c['col'],c['row']),(c['col']+c['colspan']-1,c['row']+c['rowspan']-1)))
+            if c['kind']=='break':commands.append(('BACKGROUND',(c['col'],c['row']),(c['col'],c['row']+c['rowspan']-1),colors.HexColor('#EEEAF8')))
+        table.setStyle(TableStyle(commands));story.extend([table,Spacer(1,10)])
+        legends=[]
+        for l in layout['legends']:legends.append([para(l['title'],legendstyle)]+[para(x,legendstyle) for x in l['items']])
+        legendrows=[[legends[c][r] if r<len(legends[c]) else '' for c in range(3)] for r in range(max(map(len,legends)))]
+        legend=Table(legendrows,colWidths=[doc.width/3]*3,repeatRows=1)
+        legend.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#EDEDF5')),('BOX',(0,0),(-1,-1),.5,colors.grey),('INNERGRID',(0,0),(-1,-1),.25,colors.lightgrey)]))
+        story.extend([legend,Spacer(1,6),para('LAB: practical · TUT: tutorial · Blank cells: no assigned session. Each merged cell represents one complete session.',normal)])
+    doc.build(story);return out.getvalue()

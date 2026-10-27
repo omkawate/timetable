@@ -398,6 +398,19 @@ def performance():
             'fastest_seconds':min(durations) if durations else None,'slowest_seconds':max(durations) if durations else None,
             'runs':rows,'measurement_note':'API latency covers the latest 500 completed requests in this process. Generation metrics cover solver runs among the latest 100 saved versions, including failed and timed-out searches; manual edits are excluded. Memory is peak resident process memory when available.'}
 
+@app.get('/api/generations/{identifier}/layout')
+def timetable_layout(identifier: int, view: Literal['group','teacher','classroom','lab']='group', target: str | None = None, batch: str | None = None):
+    from .presentation import layouts
+    generation=storage.get_generation(identifier)
+    if not generation:
+        raise HTTPException(404,'Timetable not found.')
+    if generation['result']['status']!='feasible':
+        raise HTTPException(409,'Only successful timetables have a layout.')
+    try:
+        return layouts(generation,view,target,batch)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+
 @app.get('/api/generations/{identifier}/export/{format}')
 def export_generation(identifier: int, format: Literal['pdf','xlsx'], view: Literal['group','teacher','classroom','lab']='group', target: str | None = Query(default=None, max_length=80), batch: str | None = Query(default=None,max_length=80)):
     record = generation_detail(identifier)

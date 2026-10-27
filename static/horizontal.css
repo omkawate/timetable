@@ -1,0 +1,20 @@
+.horizontal-scroll{overflow-x:auto;padding:16px 20px 8px}
+.horizontal-table{border-collapse:collapse;width:100%;min-width:1100px;table-layout:fixed;color:#101828;font-family:Arial,sans-serif;font-size:14px}
+.horizontal-table th,.horizontal-table td{border:1px solid #475467;text-align:center;vertical-align:middle;padding:9px 5px;position:relative;overflow-wrap:anywhere;line-height:1.4}
+.horizontal-table thead th{background:#f0eef8;font-size:14px;font-weight:700;height:54px}
+.horizontal-table thead th:first-child{width:64px}
+.horizontal-table thead .break-column{width:74px}
+.horizontal-table th small{display:block;white-space:nowrap;font-size:11px;font-weight:500;margin-top:4px}
+.horizontal-table .horizontal-day{letter-spacing:1px;font-weight:700;background:#fafafa}
+.horizontal-table .horizontal-break{background:#f0eef8;writing-mode:vertical-rl;letter-spacing:4px;font-weight:700}
+.horizontal-table .horizontal-lab,.horizontal-table .horizontal-tutorial{background:#f2faf7}
+.horizontal-table .horizontal-blocked{background:#f3f4f6}
+.horizontal-free{border:0;background:transparent;color:#667085;font-size:12px;padding:1px;position:absolute;right:2px;bottom:0;cursor:pointer}
+.horizontal-free:hover,.horizontal-free:focus-visible{color:#4032b8;background:#eeeaff}
+.horizontal-legends{display:grid;grid-template-columns:1fr 1fr 1fr;margin:14px 20px;border:1px solid #475467;color:#101828;font-size:13px;line-height:1.5}
+.horizontal-legends section+section{border-left:1px solid #475467}
+.horizontal-legends h3{font-size:13px;background:#f0eef8;margin:0;padding:7px;border-bottom:1px solid #475467}
+.horizontal-legends section div{padding:4px 8px}
+.horizontal-note{font-size:12px;padding:0 20px 14px;color:#475467}
+@media(max-width:900px){.horizontal-legends{grid-template-columns:1fr}.horizontal-legends section+section{border-left:0;border-top:1px solid #475467}}
+@media print{.horizontal-free{display:none}.horizontal-scroll{overflow:visible}.horizontal-table{min-width:0;font-size:11px}.horizontal-legends{font-size:10px}}
