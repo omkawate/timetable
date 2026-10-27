@@ -18,3 +18,28 @@
 .horizontal-note{font-size:12px;padding:0 20px 14px;color:#475467}
 @media(max-width:900px){.horizontal-legends{grid-template-columns:1fr}.horizontal-legends section+section{border-left:0;border-top:1px solid #475467}}
 @media print{.horizontal-free{display:none}.horizontal-scroll{overflow:visible}.horizontal-table{min-width:0;font-size:11px}.horizontal-legends{font-size:10px}}
+/* College reference form: monochrome, ruled headings and continuous recess. */
+.college-form-scroll{overflow-x:auto;padding:18px 20px}
+.college-form{min-width:1100px;color:#000;background:#fff}
+.college-form-heading{border:1px solid #000;border-bottom:0;text-align:center;font-family:"Times New Roman",serif;font-size:16px;font-weight:bold}
+.college-form-heading>div{border-bottom:1px solid #000;padding:3px 5px}
+.college-form-heading .heading-0{font-size:20px}
+.college-form-heading .college-form-details{display:flex;padding:0;border-bottom:0}
+.college-form-details span{flex:1;padding:3px;border-right:1px solid #000}
+.college-form-details span:last-child{border:0}
+.college-form .horizontal-table{min-width:0;color:#000;font-size:13px}
+.college-form .horizontal-table th,.college-form .horizontal-table td{border-color:#000;padding:5px 4px;line-height:1.25}
+.college-form .horizontal-table thead th{background:#fff;height:auto;font-family:"Times New Roman",serif;font-size:15px}
+.college-form .horizontal-table thead .time-heading{font-size:12px;white-space:nowrap}
+.college-form .horizontal-table .horizontal-day,.college-form .horizontal-table .horizontal-break,.college-form .horizontal-table .horizontal-lab,.college-form .horizontal-table .horizontal-tutorial,.college-form .horizontal-table .horizontal-blocked{background:#fff}
+.college-form .horizontal-table .horizontal-break{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:7px}
+.college-form .horizontal-legends{grid-template-columns:repeat(4,1fr);margin:0;border-color:#000;border-top:0;font-size:11px;line-height:1.3;color:#000}
+.college-form .horizontal-legends section+section{border-color:#000}
+.college-form .horizontal-legends h3{font-family:"Times New Roman",serif;background:#fff;border-color:#000;font-size:12px;padding:4px;text-align:center}
+.college-form .horizontal-legends section div{padding:2px 5px}
+.college-signatures{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #000;border-top:0;font-family:"Times New Roman",serif;font-weight:bold;font-size:14px;text-align:center}
+.college-signatures>div{min-height:120px;display:flex;flex-direction:column;justify-content:flex-end;padding:12px;border-right:1px solid #000}
+.college-signatures>div:last-child{border-right:0}
+.horizontal-free{opacity:0}
+.horizontal-table td:hover .horizontal-free,.horizontal-free:focus-visible{opacity:1}
+@media print{.college-form-scroll{overflow:visible;padding:0}.college-form{min-width:0}.horizontal-note{display:none}}

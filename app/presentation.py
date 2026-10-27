@@ -86,13 +86,14 @@ def layouts(generation, view='group', target=None, batch=None):
                 subject=maps['subjects'][e['subject_id']];teacher=maps['teachers'].get(e['teacher_id']);room=maps['rooms'].get(e['room_id'])
                 batch_name=maps['batches'][e['batch_id']]['name'] if e.get('batch_id') else ''
                 code=subject_codes[e['subject_id']]
-                label=code+(' [LAB]' if e['kind']=='lab' else ' [TUT]' if e['kind']=='tutorial' else ' [PROJECT]' if e['kind']=='project' else '')
+                label=code+('-TUT' if e['kind']=='tutorial' else '')
                 if batch_name:label+=' ('+batch_name+')'
                 room_name=room['name'] if room else ''
                 faculty=teacher_codes[e['teacher_id']] if teacher else ''
-                text=' / '.join(v for v in [label,faculty,room_name] if v) if e['kind']!='lecture' else '\n'.join(v for v in [label,room_name,faculty] if v)
+                text=' / '.join(v for v in [label,faculty,room_name] if v) if e['kind']!='lecture' else '\n'.join(v for v in [label,faculty,room_name] if v)
                 if view!='group':
                     group=maps['groups'][e['group_id']];text+='\nSem '+str(group['semester'])+' · Div '+group['division']
+                if e['kind']=='project' and not teacher:text='PROJECT'
                 detail=' · '.join(v for v in [subject['name'],teacher['name'] if teacher else '',room_name,batch_name,settings.periods()[e['slot']][0]+'–'+settings.periods()[e['slot']+e['duration']-1][1]] if v)
                 alone=not any(other is not e and other['slot']<e['slot']+e['duration'] and e['slot']<other['slot']+other['duration'] for other in events)
                 if e['kind']=='lecture' and not alone:text=text.replace('\n',' / ')
@@ -108,9 +109,27 @@ def layouts(generation, view='group', target=None, batch=None):
                 for rr in range(row_index,row_index+height):
                     if (rr,col) not in occupied:add(rr,col,block.reason if block else '',kind='blocked' if block else 'empty',slot=column['slot'])
             day_rows.append(dict(day=day_name,start=row_index,rows=height));row_index+=height
-        legends=[{'title':'Subjects / practicals','items':[subject_codes[s['id']]+' — '+s['name'] for s in data['subjects'] if s['id'] in used_subjects]},
-                 {'title':'Faculty','items':[teacher_codes[t['id']]+' — '+t['name'] for t in data['teachers'] if t['id'] in used_teachers]},
-                 {'title':'Rooms / laboratories','items':[r['name']+' — '+r['kind'].capitalize() for r in data['rooms'] if r['id'] in used_rooms]}]
+        # One recess column for the whole week, matching the printed college form.
+        cells=[c for c in cells if c['kind']!='break' or c['row']==1]
+        for cell in cells:
+            if cell['kind']=='break':cell['rowspan']=row_index-1
+        lab_subjects={e['subject_id'] for e in selected if e['kind']=='lab'}
+        theory_subjects={e['subject_id'] for e in selected if e['kind']!='lab'}
+        legends=[{'title':'Nomenclature of Subject','items':[subject_codes[s['id']]+' - '+s['name'] for s in data['subjects'] if s['id'] in theory_subjects]},
+                 {'title':'Nomenclature of Subject Lab','items':[subject_codes[s['id']]+' - '+s['name'] for s in data['subjects'] if s['id'] in lab_subjects]},
+                 {'title':'Location of Rooms / Labs','items':[r['name']+' - '+r['kind'].capitalize() for r in data['rooms'] if r['id'] in used_rooms]},
+                 {'title':'Faculty Details','items':[teacher_codes[t['id']]+' - '+t['name'] for t in data['teachers'] if t['id'] in used_teachers]}]
+        department=maps['departments'].get(record.get('department_id'),{})
+        if not department and selected:
+            departments={maps['groups'][e['group_id']]['department_id'] for e in selected}
+            if len(departments)==1:department=maps['departments'][next(iter(departments))]
+        semester=record.get('semester')
+        year={1:'FIRST YEAR (FE)',2:'SECOND YEAR (SE)',3:'THIRD YEAR (TE)',4:'FINAL YEAR (BE)'}.get((semester+1)//2 if semester else 0,'')
+        roman={1:'I',2:'II',3:'III',4:'IV',5:'V',6:'VI',7:'VII',8:'VIII'}.get(semester,str(semester or ''))
+        headers=[COLLEGE.upper(),('DEPARTMENT OF '+department.get('name','')).upper() if department else 'DEPARTMENT TIMETABLE',
+                 ('DIVISION TIME TABLE' if view=='group' else view.upper()+' TIME TABLE')+' (Term - ______ · A.Y. __________)',
+                 'Date of Commencement of Term: __________________']
+        details=['YEAR: '+year,'SEMESTER - '+roman,'Division - '+record.get('division','')] if view=='group' else [title]
         output.append(dict(title=title,college=COLLEGE,columns=columns,cells=cells,row_count=row_index,days=day_rows,legends=legends,
-                           hours=sum(e['duration']*settings.period_minutes/60 for e in selected)))
+                           headers=headers,details=details,signatures=['Prepared & Verified by\n\nTime Table Incharge'+(' ('+department['code']+')' if department else ''),'College Seal','Approved By\n\nHead of Department'],hours=sum(e['duration']*settings.period_minutes/60 for e in selected)))
     return output

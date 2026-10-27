@@ -18,6 +18,10 @@ def test_horizontal_geometry_exports_and_immutability():
     for view in ['group','teacher','classroom','lab']:
      ls=layouts(record,view)
      for layout in ls:
+      assert len(layout['headers'])==4 and len(layout['legends'])==4
+      breaks=[cell for cell in layout['cells'] if cell['kind']=='break']
+      assert len(breaks)==len(x.settings.breaks)
+      assert all(cell['row']==1 and cell['rowspan']==layout['row_count']-1 for cell in breaks)
       seen=set()
       for cell in layout['cells']:
        cells={(r,c) for r in range(cell['row'],cell['row']+cell['rowspan']) for c in range(cell['col'],cell['col']+cell['colspan'])}
@@ -28,5 +32,11 @@ def test_horizontal_geometry_exports_and_immutability():
      output=pdf(record,view);assert output[:4]==b'%PDF'
      book=load_workbook(io.BytesIO(excel(record,view)));assert len(book.worksheets)==len(ls)
      assert any(len(s.merged_cells.ranges)>3 for s in book)
+     for sheet,layout in zip(book,ls):
+      assert sheet['A2'].value==layout['headers'][1]
+      assert sheet['A4'].value.startswith('Date of Commencement')
+      assert sheet.page_setup.fitToHeight==1
+      for cell in [c for c in layout['cells'] if c['kind']=='break']:
+       assert any(r.min_row==8 and r.max_row==layout['row_count']+6 and r.min_col==cell['col']+1 for r in sheet.merged_cells.ranges)
      print(view,len(ls),'layouts and exports passed',flush=True)
     assert record==original
