@@ -1,3 +1,5 @@
+FACULTY PREFERENCES UPDATE: Read FACULTY_PREFERENCES_UPDATE.md and docs/GENERATION_TEST_REPORT.md. Eight-division generation with updated availability is not yet verified; six divisions passed. Back up your existing data before replacing this folder.
+
 TIMETABLE — FINAL BATCH / FREE RESOURCE / COMBINED ELECTIVE UPDATE
 
 1. Extract this ZIP into a NEW folder. Keep your previous folder as backup.

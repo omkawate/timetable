@@ -1,9 +1,10 @@
 """Free resources for an entire requested interval in a saved timetable."""
 from .domain import Configuration, minutes
+from .resources import effective_limits
 
 
 def free_resources(record,day,slot,duration=1):
-    config=Configuration(**record['config']);settings=config.settings
+    config=effective_limits(Configuration(**record['config']));settings=config.settings
     if record['result']['status']!='feasible': raise ValueError('Choose a successful saved timetable.')
     if day<0 or day>=len(settings.days) or slot<0 or not settings.fits(day,slot,duration):
         raise ValueError('This interval crosses a break, blocked period, or the end of the day.')

@@ -7,7 +7,7 @@ from app.hints import reference_entries
 from openpyxl import load_workbook
 
 def test_horizontal_geometry_exports_and_immutability():
-    c=sqlite3.connect('file:'+str(Path(__file__).parents[1]/'data/unisched.db')+'?mode=ro',uri=True)
+    c=sqlite3.connect('file:'+str(Path(__file__).parent/'original_unisched.db')+'?mode=ro',uri=True)
     d=json.loads(c.execute('select body from configuration').fetchone()[0])
     for o in d['offerings']:
      if o['id'] in ['o'+str(i) for i in range(136,145)]:o['lab_room_type']='classroom'

@@ -2,12 +2,13 @@
 from collections import defaultdict, Counter
 import math
 from .domain import Configuration, minutes
+from .resources import lecture_allowed,effective_limits
 from .classrooms import classroom_metrics
 from .resources import affected_units, eligible_rooms, student_units, session_specs, booking_key, booking_members, unreserved_project, elective_code
 
 
 def analyze(record):
-    config = Configuration(**record['config'])
+    config = effective_limits(Configuration(**record['config']))
     result = record['result']
     if result['status'] != 'feasible':
         return {'available':False,'issues':result['issues']}
@@ -39,6 +40,8 @@ def analyze(record):
             violations.append(f'{s.code}: session crosses a break, blocked period, or end of day.')
         if t and (minutes(periods[e['slot']][0]) < minutes(t.arrival) or minutes(periods[e['slot']+e['duration']-1][1]) > minutes(t.departure)):
             violations.append(f'{t.name}: session is outside working hours.')
+        if not lecture_allowed(t,e['kind'],periods[e['slot']][0],periods[e['slot']+e['duration']-1][1]):
+            violations.append(f'{t.name}: lecture outside required preference window.')
         if t and e['kind'] in ('lab','project') and not t.lab_eligible:
             violations.append(f'{t.name}: not eligible for a lab/project.')
         booking=(booking_key(config,o,e['kind']),e['day'],e['slot'],e['duration'],e['room_id'])
@@ -89,7 +92,8 @@ def analyze(record):
         hours=teacher_load[t.id]*settings.period_minutes/60
         if hours>t.max_hours or max(daily,default=0)>t.max_daily_slots:
             violations.append(f'{t.name}: daily or weekly limit exceeded.')
-        teacher_rows.append({'id':t.id,'name':t.name,'hours':hours,'weekly_limit':t.max_hours,'daily':daily,'daily_limit':t.max_daily_slots})
+        by_kind={kind:len({(e['day'],p) for e in entries if e['teacher_id']==t.id and e['kind']==kind for p in range(e['slot'],e['slot']+e['duration'])})*settings.period_minutes/60 for kind in ('lecture','lab','tutorial','project')}
+        teacher_rows.append({**{kind+'_hours':value for kind,value in by_kind.items()},'id':t.id,'name':t.name,'hours':hours,'weekly_limit':t.max_hours,'daily':daily,'daily_limit':t.max_daily_slots})
     student_rows=[]
     gaps=0
     filled=0

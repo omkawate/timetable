@@ -156,3 +156,24 @@ def save_manual_version(source, expected_revision, name, result):
         workflow['revision']+=1
         _write_workflow(db,source['id'],workflow)
         return cursor.lastrowid
+
+
+def reset_academic_data(expected_revision,delete_history=False):
+    from .domain import Configuration
+    from datetime import datetime,timezone
+    from uuid import uuid4
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        row=db.execute('SELECT * FROM configuration WHERE id=1').fetchone()
+        if not row or row['revision']!=expected_revision:raise RevisionConflict('Data changed. Reload before clearing.')
+        backup={'configuration':json.loads(row['body']),'revision':row['revision'],
+                'generations':[dict(x) for x in db.execute('SELECT * FROM generations')],
+                'generation_workflow':[dict(x) for x in db.execute('SELECT * FROM generation_workflow')]}
+        directory=Path(os.environ.get('UNISCHED_DB',str(DEFAULT_DB))).parent/'backups';directory.mkdir(exist_ok=True)
+        path=directory/('before-reset-'+datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')+'-'+uuid4().hex[:8]+'.json')
+        path.write_text(json.dumps(backup),encoding='utf-8')
+        empty=Configuration(settings=backup['configuration']['settings']).model_dump()
+        db.execute('UPDATE configuration SET body=?,revision=revision+1 WHERE id=1',(json.dumps(empty),))
+        if delete_history:
+            db.execute('DELETE FROM generation_workflow');db.execute('DELETE FROM generations')
+    return {'revision':expected_revision+1,'configuration':empty,'backup':path.name}

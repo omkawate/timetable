@@ -5,6 +5,7 @@ import time
 from collections import defaultdict
 from ortools.sat.python import cp_model
 from .domain import Configuration, minutes
+from .resources import lecture_allowed, preference_cost, effective_limits
 from .classrooms import (classroom_metrics, optimize_classrooms, require_classroom_runs,
                          interchangeable_classrooms, allocate_classroom_blocks, interchangeable_labs, allocate_lab_intervals, instructional_room_pool, allocate_instruction_intervals)
 from .resources import student_units, affected_units, session_specs, teaching_slots, eligible_rooms, booking_key, unreserved_project, elective_code, group_options
@@ -18,6 +19,7 @@ def preflight(config: Configuration):
     if not config.offerings or not config.groups:
         return [issue('EMPTY_DATA', 'There are no teaching assignments to schedule.',
                       'Import reference data or add divisions, teachers, subjects, and assignments.')]
+    config=effective_limits(config)
     settings = config.settings
     periods = settings.periods()
     weekly_slots = sum(len(settings.available(day)) for day in range(len(settings.days)))
@@ -30,6 +32,7 @@ def preflight(config: Configuration):
     groups = {g.id:g for g in config.groups}
     teachers = {t.id:t for t in config.teachers}
     room_demands = defaultdict(int)
+    lecture_demand=defaultdict(int)
     counted=set()
     for item in config.offerings:
         total = teaching_slots(config, item)
@@ -50,11 +53,12 @@ def preflight(config: Configuration):
             counted.add(key)
             if unreserved_project(item,kind): continue
             teacher_slots[item.teacher_id] += count*duration
+            if kind=='lecture':lecture_demand[item.teacher_id]+=count*duration
             rooms = eligible_rooms(config,item,kind)
             if not rooms:
                 room_type = 'classroom' if kind in ('lecture','tutorial') else item.lab_room_type if kind == 'lab' else 'lab'
-                problems.append(issue('ROOM_ELIGIBILITY',f'{subject.code}, semester {group.semester} {group.division}: no eligible {room_type} fits the student strength, department, year, and selected room.',
-                    'Add or select a room with sufficient capacity and matching department/year eligibility, or use smaller practical batches.'))
+                problems.append(issue('ROOM_ELIGIBILITY',f'{subject.code}, semester {group.semester} {group.division}: no eligible {room_type} fits the student strength, department, year, selected room, and required faculty lab preferences.',
+                    'Review required faculty laboratories and department/year eligibility. Select a compatible room; use Preferred instead of Required only when alternatives are acceptable.'))
             if len(rooms) == 1:
                 room_slots[rooms[0].id] += count*duration
             if rooms:
@@ -63,7 +67,7 @@ def preflight(config: Configuration):
                 continue
             teacher = teachers[item.teacher_id]
             possible = any(settings.fits(day,slot,duration) and minutes(periods[slot][0]) >= minutes(teacher.arrival)
-                           and minutes(periods[slot+duration-1][1]) <= minutes(teacher.departure)
+                           and minutes(periods[slot+duration-1][1]) <= minutes(teacher.departure) and lecture_allowed(teacher,kind,*[periods[slot][0],periods[slot+duration-1][1]])
                            for day in range(len(settings.days)) for slot in range(len(periods)))
             if not possible:
                 problems.append(issue('LAB_AVAILABILITY' if kind != 'lecture' else 'TEACHER_AVAILABILITY',
@@ -76,6 +80,10 @@ def preflight(config: Configuration):
         if slots*hour > teacher.max_hours:
             problems.append(issue('TEACHER_LOAD',f'{teacher.name} has {slots*hour:g} assigned hours, above the {teacher.max_hours}-hour weekly limit.',
                 f'Reassign at least {slots*hour-teacher.max_hours:g} hours to another teacher, reduce requirements, or raise the limit if policy permits.'))
+        if teacher.lecture_start and teacher.lecture_preference_mode=='required':
+            lecture_available=sum(minutes(periods[p][0])>=minutes(teacher.arrival) and minutes(periods[p][1])<=minutes(teacher.departure) and lecture_allowed(teacher,'lecture',*periods[p]) for d in range(len(settings.days)) for p in settings.available(d))
+            if lecture_demand[teacher.id]>lecture_available:
+                problems.append(issue('LECTURE_WINDOW_CAPACITY',f'{teacher.name} needs {lecture_demand[teacher.id]} lecture periods but the required window allows {lecture_available}.','Widen the required lecture window or choose Preferred to allow alternatives.'))
         if slots > available:
             problems.append(issue('TEACHER_AVAILABILITY',f'{teacher.name} needs {slots} periods but availability and the daily cap allow only {available} periods per week.',
                                   'Extend availability, adjust the daily cap, or reassign subjects.'))
@@ -112,6 +120,7 @@ def preflight(config: Configuration):
 
 def generate(config: Configuration, time_limit=20, target_group_ids=None, locked_entries=None, random_seed=None, initial_entries=None, pool_instruction_rooms=True, search_entries=None, reuse_requested=False):
     started = time.monotonic()
+    config=effective_limits(config)
     all_groups = {g.id:g for g in config.groups}
     targets = set(target_group_ids if target_group_ids is not None else all_groups)
     locked = [e for e in (locked_entries or []) if e['group_id'] not in targets]
@@ -243,6 +252,7 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
                         continue
                     if teacher and (minutes(periods[slot][0]) < minutes(teacher.arrival) or minutes(periods[slot+duration-1][1]) > minutes(teacher.departure)):
                         continue
+                    if not lecture_allowed(teacher,kind,periods[slot][0],periods[slot+duration-1][1]):continue
                     for room in rooms:
                         joint_key=(booking_key(selected,item,kind),day,slot,room.id)
                         var=joint_variables.get(joint_key)
@@ -380,7 +390,8 @@ def generate(config: Configuration, time_limit=20, target_group_ids=None, locked
         if o is None or elective_code(selected,o): continue
         variables=[v for v,c in candidates if c['offering_id']==e['offering_id'] and c['kind']==e['kind'] and c['day']==e['day'] and c['slot']==e['slot']]
         preserved.append(1-sum(variables))
-    model.Minimize(sum(preserved)*100000+sum(penalties)*100+peak)
+    pref=sum(preference_cost(selected,next(o for o in selected.offerings if o.id==e['offering_id']),e['kind'],e['room_id'],periods[e['slot']][0],periods[e['slot']+e['duration']-1][1])*v for v,e in candidates)
+    model.Minimize(sum(preserved)*100000+pref*1000+sum(penalties)*100+peak)
     diagnostic_model = model.Clone()
     model.ClearAssumptions()
     for index in assumptions:

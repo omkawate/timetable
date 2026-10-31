@@ -37,12 +37,20 @@ class Teacher(Record):
     short_code: str = Field(default='', max_length=20)
     max_daily_slots: int = Field(default=8, ge=1, le=16, strict=True)
     lab_eligible: bool = True
+    auto_workload: bool = False
+    preferred_lab_ids: list[str] = Field(default_factory=list)
+    lab_preference_mode: str = Field(default='preferred', pattern=r'^(preferred|required)$')
+    lecture_start: str | None = None
+    lecture_end: str | None = None
+    lecture_preference_mode: str = Field(default='preferred', pattern=r'^(preferred|required)$')
+    lecture_priority: int = Field(default=1, ge=1, le=10)
     arrival: str
     departure: str
 
-    @field_validator('arrival', 'departure')
+    @field_validator('arrival', 'departure', 'lecture_start', 'lecture_end')
     @classmethod
     def valid_time(cls, value):
+        if value is None:return value
         if not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', value):
             raise ValueError('Use a 24-hour time such as 09:00 or 17:45.')
         return value
@@ -51,6 +59,12 @@ class Teacher(Record):
     def time_order(self):
         if not 360 <= minutes(self.arrival) < minutes(self.departure) <= 1320:
             raise ValueError('Arrival and departure must be ordered within 06:00–22:00.')
+        if bool(self.lecture_start)!=bool(self.lecture_end) or (self.lecture_start and minutes(self.lecture_start)>=minutes(self.lecture_end)):
+            raise ValueError('Set both preferred lecture times, with the end after the start.')
+        if self.lab_preference_mode=='required' and not self.preferred_lab_ids:
+            raise ValueError('Select at least one required laboratory or choose Preferred mode.')
+        if self.lecture_preference_mode=='required' and not self.lecture_start:
+            raise ValueError('Set a lecture start/end window or choose Preferred mode.')
         if self.email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', self.email):
             raise ValueError('Enter a valid email address or leave it blank.')
         return self
@@ -78,8 +92,9 @@ class Room(Record):
     capacity: int = Field(default=80, ge=1, le=500, strict=True)
     department_id: str | None = None
     eligible_years: list[int] = Field(default_factory=list)
+    preferred_years: list[int] = Field(default_factory=list)
 
-    @field_validator('eligible_years')
+    @field_validator('eligible_years','preferred_years')
     @classmethod
     def valid_years(cls, value):
         if len(set(value)) != len(value) or any(year not in (1,2,3,4) for year in value):
@@ -174,6 +189,9 @@ class Configuration(BaseModel):
         for item in [*self.teachers, *self.subjects, *self.groups, *self.elective_sets, *self.rooms]:
             if item.department_id is not None and item.department_id not in departments:
                 raise ValueError(f'{item.id} references a missing department.')
+        for teacher in self.teachers:
+            if any(r not in rooms or rooms[r].kind!='lab' for r in teacher.preferred_lab_ids):
+                raise ValueError(f'{teacher.name}: choose existing laboratory rooms.')
         for batch in self.batches:
             if batch.group_id not in groups:
                 raise ValueError(f'Batch {batch.name} references a missing division.')

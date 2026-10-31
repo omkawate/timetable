@@ -8,6 +8,7 @@ from collections import defaultdict
 import math
 from ortools.sat.python import cp_model
 from .domain import minutes
+from .resources import lecture_allowed, preference_cost
 from .resources import (session_specs,booking_key,booking_members,affected_units,
                         eligible_rooms,student_units,unreserved_project,elective_code)
 from .classrooms import (instructional_room_pool,interchangeable_labs,
@@ -18,10 +19,27 @@ def solve_intervals(config,time_limit,random_seed=42,aligned_labs=False):
     s=config.settings;periods=s.periods();width=len(periods);days=len(s.days)
     if s.blocked:return None
     classrooms=instructional_room_pool(config,[])
-    labs=interchangeable_labs(config,[])
+    labs=[r for r in config.rooms if r.kind=='lab']
+    pool_labs=bool(interchangeable_labs(config,[]))
     if not classrooms or not labs:return None
     class_ids={r.id for r in classrooms};lab_ids={r.id for r in labs}
+    import json
+    from pathlib import Path
+    hints=json.loads(Path(__file__).with_name('schedule_hints.json').read_text())
+    offering_map={o.id:o for o in config.offerings};teacher_map={t.id:t for t in config.teachers}
+    eligibility={(o.id,k):{r.id for r in eligible_rooms(config,o,k)} for o in config.offerings for k,n,_ in session_specs(config,o) if n}
+    def hint_distance(es):
+        score=0
+        for e in es:
+            if e['offering_id'] not in offering_map:score+=100;continue
+            t=teacher_map.get(e['teacher_id'])
+            if e['room_id'] and e['room_id'] not in eligibility.get((e['offering_id'],e['kind']),set()):score+=10
+            if e['slot']+e['duration']>width:score+=100;continue
+            if t and (periods[e['slot']][0]<t.arrival or periods[e['slot']+e['duration']-1][1]>t.departure):score+=1
+        return score
+    seed=min(hints.values(),key=hint_distance,default=[])
     model=cp_model.CpModel();tasks=[];seen=set();by_teacher=defaultdict(list);by_student=defaultdict(list)
+    exact_labs=defaultdict(list);preference_terms=[];repair_terms=[]
     by_room=defaultdict(list);by_elective=defaultdict(list);teachers={t.id:t for t in config.teachers}
     subjects={x.id:x for x in config.subjects};groups={x.id:x for x in config.groups}
     for o in config.offerings:
@@ -32,15 +50,16 @@ def solve_intervals(config,time_limit,random_seed=42,aligned_labs=False):
             units=set(u for member in members for u in affected_units(config,member))
             rooms=eligible_rooms(config,o,kind);ids={r.id for r in rooms}
             if unreserved_project(o,kind):room_key=None;room_id=None
-            elif ids==lab_ids:room_key='labs';room_id=labs[0].id
+            elif ids and ids<=lab_ids:room_key='labs';room_id=labs[0].id
             elif class_ids<=ids:room_key='classrooms';room_id=classrooms[0].id
             elif len(ids)==1 and not ids & (class_ids|lab_ids):room_id=rooms[0].id;room_key='fixed:'+room_id
             else:return None
             teacher=teachers.get(o.teacher_id)
             domain=[d*width+p for d in range(days) for p in range(width) if s.fits(d,p,duration) and (not aligned_labs or kind!='lab' or p%duration==0)
                 and (not teacher or (minutes(periods[p][0])>=minutes(teacher.arrival)
-                and minutes(periods[p+duration-1][1])<=minutes(teacher.departure)))]
+                and minutes(periods[p+duration-1][1])<=minutes(teacher.departure) and lecture_allowed(teacher,kind,periods[p][0],periods[p+duration-1][1])))]
             if not domain:return {'status':'infeasible','entries':[]}
+            matches=sorted([e for e in seed if e['offering_id']==o.id and e['kind']==kind],key=lambda e:(e['day'],e['slot']))
             previous=None;series=[]
             for index in range(count):
                 name=f'{o.id}_{kind}_{index}'
@@ -53,8 +72,21 @@ def solve_intervals(config,time_limit,random_seed=42,aligned_labs=False):
                     b=model.NewBoolVar(name+f'_on_{d}');model.Add(day==d).OnlyEnforceIf(b);model.Add(day!=d).OnlyEnforceIf(b.Not());on.append(b)
                 if previous is not None:model.Add(start>previous)
                 previous=start
+                if index<len(matches):
+                    value=matches[index]['day']*width+matches[index]['slot']
+                    if value in domain:
+                        model.AddHint(start,value)
+                        moved=model.NewBoolVar('changed_seed_session');model.Add(start!=value).OnlyEnforceIf(moved);model.Add(start==value).OnlyEnforceIf(moved.Not());repair_terms.append(moved)
                 task=dict(start=start,end=end,interval=interval,day=day,on=on,duration=duration,kind=kind,
                           members=members,units=units,room_id=room_id,teacher_id=o.teacher_id)
+                task['room_choices']=[]
+                if room_key=='labs' and not pool_labs:
+                    for room in rooms:
+                        chosen=model.NewBoolVar('lab_choice');task['room_choices'].append((chosen,room.id))
+                        exact_labs[room.id].append(model.NewOptionalIntervalVar(start,duration,end,chosen,'lab_interval'))
+                        cost=preference_cost(config,o,kind,room.id,'00:00','00:00')
+                        if cost:preference_terms.append(cost*chosen)
+                    model.AddExactlyOne([v for v,_ in task['room_choices']])
                 tasks.append(task);series.append(task)
                 if teacher:by_teacher[teacher.id].append(task)
                 for u in units:by_student[u].append(task)
@@ -63,6 +95,7 @@ def solve_intervals(config,time_limit,random_seed=42,aligned_labs=False):
                     group=groups[o.group_id];by_elective[group.department_id,group.semester].append(task)
             if s.spread_lectures and kind in ('lecture','tutorial'):
                 for d in range(days):model.Add(sum(t['on'][d] for t in series)<=math.ceil(count/days))
+    for intervals in exact_labs.values():model.AddNoOverlap(intervals)
     for key,items in by_room.items():
         capacity=len(labs) if key=='labs' else len(classrooms) if key=='classrooms' else 1
         model.AddCumulative([t['interval'] for t in items],[1]*len(items),capacity)
@@ -122,6 +155,8 @@ def solve_intervals(config,time_limit,random_seed=42,aligned_labs=False):
         choices=[]
         for value in values:
             b=model.NewBoolVar('session_start_choice');choices.append(b)
+            cost=preference_cost(config,t['members'][0],t['kind'],None,periods[value%width][0],periods[value%width+t['duration']-1][1])
+            if cost:preference_terms.append(cost*b)
             model.Add(t['start']==value).OnlyEnforceIf(b)
             for q in range(value,value+t['duration']):
                 if t['teacher_id']:grid['teacher',t['teacher_id'],q].append(b)
@@ -138,18 +173,20 @@ def solve_intervals(config,time_limit,random_seed=42,aligned_labs=False):
     first_units=student_units(config,config.groups[0])
     day_totals=[sum(daily_load[u,d] for u in first_units if (u,d) in daily_load) for d in range(days)]
     for a,b in zip(day_totals,day_totals[1:]):model.Add(a>=b)
+    if preference_terms or repair_terms:model.Minimize(sum(preference_terms)*1000+sum(repair_terms))
     solver=cp_model.CpSolver();solver.parameters.max_time_in_seconds=max(.001,time_limit)
-    solver.parameters.num_search_workers=4;solver.parameters.random_seed=random_seed
-    solver.parameters.stop_after_first_solution=True
+    solver.parameters.num_search_workers=8;solver.parameters.random_seed=random_seed
+    solver.parameters.stop_after_first_solution=not bool(preference_terms)
     status=solver.Solve(model)
     if status not in (cp_model.OPTIMAL,cp_model.FEASIBLE):
         return {'status':'infeasible' if status==cp_model.INFEASIBLE else 'timeout','entries':[]}
     entries=[]
     for t in tasks:
         start=solver.Value(t['start'])
+        if t['room_choices']:t['room_id']=next(r for v,r in t['room_choices'] if solver.BooleanValue(v))
         for o in t['members']:
             entries.append(dict(offering_id=o.id,group_id=o.group_id,subject_id=o.subject_id,teacher_id=o.teacher_id,
                 batch_id=o.batch_id,kind=t['kind'],duration=t['duration'],day=start//width,slot=start%width,room_id=t['room_id']))
-    entries=allocate_lab_intervals(entries,labs)
+    if pool_labs:entries=allocate_lab_intervals(entries,labs)
     entries=allocate_instruction_intervals(config,entries,classrooms)
     return {'status':'feasible','entries':entries,'peak':max(solver.Value(v) for v in daily_load.values())}

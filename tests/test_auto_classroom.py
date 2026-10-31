@@ -7,7 +7,7 @@ from app.analytics import analyze
 from app.exchange import configuration_csv_v2,parse_extended_csv,configuration_excel,parse_upload
 
 def source():
-    with sqlite3.connect(Path(__file__).parents[1]/'data/unisched.db') as db:
+    with sqlite3.connect(Path(__file__).parent/'original_unisched.db') as db:
         return Configuration(**json.loads(db.execute('select body from configuration where id=1').fetchone()[0]))
 
 def test_choice_and_roundtrip():

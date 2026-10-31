@@ -9,7 +9,7 @@ from .domain import Configuration, CSV_FIELDS, parse_csv
 EXTRA_FIELDS = ['department_code','department_name','student_strength','teacher_daily_limit',
                 'teacher_email','teacher_short_code','teacher_lab_eligible','project_sessions_per_week',
                 'batch_name','batch_strength','elective_set','course_type','weekly_hours',
-                'classroom_pool','lab_pool','calendar_json','department_pool','teacher_department_code','elective_set_code','project_hours_per_session','project_room','tutorial_sessions_per_week','tutorial_room','tutorial_hours_per_session','lab_room_type']
+                'classroom_pool','lab_pool','calendar_json','department_pool','teacher_department_code','elective_set_code','project_hours_per_session','project_room','tutorial_sessions_per_week','tutorial_room','tutorial_hours_per_session','lab_room_type','teacher_preferences_json']
 V2_FIELDS = CSV_FIELDS + EXTRA_FIELDS
 TABLES = ['departments','teachers','subjects','rooms','groups','batches','elective_sets','offerings']
 
@@ -34,7 +34,7 @@ def configuration_csv_v2(config):
         row = dict(zip(CSV_FIELDS,[g.semester,g.division,t.name,t.max_hours,t.arrival,t.departure,s.name,s.code,
             str(s.elective).lower(),m['rooms'][g.room_id].name if g.room_id else 'AUTO',
             m['rooms'][o.lab_room_id].name if o.lab_room_id else '',o.lectures,o.labs]))
-        row.update(lab_room_type=o.lab_room_type,department_code=dept.code,department_name=dept.name,student_strength=g.strength,
+        row.update(teacher_preferences_json=json.dumps({k:getattr(t,k,None) for k in ('auto_workload','preferred_lab_ids','lab_preference_mode','lecture_start','lecture_end','lecture_preference_mode','lecture_priority')}) if o.teacher_id else '',lab_room_type=o.lab_room_type,department_code=dept.code,department_name=dept.name,student_strength=g.strength,
             teacher_daily_limit=t.max_daily_slots,teacher_email=t.email,teacher_short_code=t.short_code,
             teacher_lab_eligible=str(t.lab_eligible).lower(),project_sessions_per_week=o.projects,project_hours_per_session=o.project_hours,project_room=m['rooms'][o.project_room_id].name if o.project_room_id else '',
             tutorial_sessions_per_week=o.tutorials,tutorial_room=m['rooms'][o.tutorial_room_id].name if o.tutorial_room_id else '',tutorial_hours_per_session=o.tutorial_hours,
@@ -176,6 +176,10 @@ def parse_extended_csv(content):
                 'project_hours':float(row['project_hours_per_session']) if row.get('project_hours_per_session') else None,'batch_id':batch,'lab_room_id':lab,'lab_room_type':row.get('lab_room_type') or 'lab'})
         except (KeyError,ValueError,TypeError) as exc:
             raise ValueError(f'CSV row {number}: {exc}') from exc
+    for row in rows:
+        if row.get('teacher_preferences_json'):
+            teacher=next((t for t in data['teachers'] if t['name']==row['teacher_name']),None)
+            if teacher:teacher.update(json.loads(row['teacher_preferences_json']))
     return Configuration(**data)
 
 
@@ -239,7 +243,7 @@ def parse_upload(raw, filename):
                     if key=='settings':
                         data[key][row['setting']] = json.loads(row['value_json'])
                     else:
-                        for field in ('eligible_years',):
+                        for field in ('eligible_years','preferred_years','preferred_lab_ids'):
                             if field in row:
                                 row[field] = json.loads(row[field] or '[]')
                         for field in ('email','short_code'):

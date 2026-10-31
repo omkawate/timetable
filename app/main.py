@@ -130,11 +130,40 @@ def configuration():
 
 @app.put('/api/config')
 def save_configuration(payload: ConfigUpdate):
+    from .resources import effective_limits
+    calculation=payload.configuration.model_copy(deep=True)
+    calculation.settings.combined_elective_students={'IS':60,'STQA':60} if any(g.semester==7 for g in calculation.groups) else {}
+    calculated=effective_limits(calculation)
+    for teacher in payload.configuration.teachers:
+        if teacher.auto_workload:
+            limits=next(t for t in calculated.teachers if t.id==teacher.id)
+            teacher.max_hours=limits.max_hours;teacher.max_daily_slots=limits.max_daily_slots
     try:
         revision = storage.save_config(payload.configuration.model_dump(), payload.revision)
     except storage.RevisionConflict as exc:
         raise HTTPException(409, str(exc)) from exc
     return {'revision': revision, 'configuration': payload.configuration.model_dump()}
+
+@app.get('/api/faculty-workload')
+def faculty_workload_report():
+    from .resources import faculty_workload,effective_limits
+    config=Configuration(**storage.get_config()['configuration'])
+    config.settings.combined_elective_students={'IS':60,'STQA':60} if any(g.semester==7 for g in config.groups) else {}
+    return faculty_workload(effective_limits(config))
+
+class ResetRequest(BaseModel):
+    revision: int
+    confirmation: Literal['DELETE ALL DATA']
+    delete_history: bool = False
+
+@app.post('/api/reset-academic-data')
+def reset_academic_data(payload: ResetRequest):
+    if not generation_lock.acquire(blocking=False):raise HTTPException(409,'Wait for generation to finish before clearing data.')
+    try:
+        return storage.reset_academic_data(payload.revision,payload.delete_history)
+    except storage.RevisionConflict as exc:
+        raise HTTPException(409,str(exc)) from exc
+    finally:generation_lock.release()
 
 @app.get('/api/config.csv')
 def export_configuration():
@@ -196,6 +225,8 @@ def generate_timetable(payload: GenerateRequest):
             config = Configuration(**{**config.model_dump(), 'settings': settings})
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        from .resources import effective_limits
+        config=effective_limits(config)
         groups = [g for g in config.groups if (not payload.department_id or g.department_id == payload.department_id)
                   and (not payload.semester or g.semester == payload.semester)]
         if payload.group_ids is not None:
@@ -233,9 +264,19 @@ def generate_timetable(payload: GenerateRequest):
         from .hints import reference_entries
         compatible_seed=bool(seed and seed['config']['settings']==config.settings.model_dump())
         prepared=seed['result']['entries'] if compatible_seed else reference_entries(config) or (seed['result']['entries'] if seed else None)
+        if not prepared:
+            from .hints import preference_seed
+            prepared=preference_seed(config)
+            compatible_seed=bool(prepared)
         result = generate(config, payload.time_limit, [g.id for g in groups], base['result']['entries'] if base else [],
                           initial_entries=prepared, reuse_requested=compatible_seed)
         if result['status'] == 'feasible':
+            from .preferences import assign_rooms,report
+            result['entries']=assign_rooms(config,result['entries'],[e for e in base['result']['entries'] if e['group_id'] not in target_ids] if base else [])
+            result['preferences']=report(config,result['entries'])
+            from .classrooms import classroom_metrics
+            result['summary']['classroom_optimization'].update(classroom_metrics(config,result['entries']))
+            if any(t.preferred_lab_ids for t in config.teachers) or any(r.preferred_years for r in config.rooms):result['summary']['classroom_optimization']['optimal']=False
             audit = analyze({'config': config.model_dump(), 'result': result})
             if audit['hard_conflicts']:
                 raise HTTPException(500, 'The generated candidate failed final validation and was not saved: '
@@ -249,7 +290,7 @@ def generate_timetable(payload: GenerateRequest):
             'classroom_minimum': config.settings.classroom_run_length,
             'balanced_days': config.settings.balanced_days,
             'start_at_opening': config.settings.start_at_opening,
-            'hours_adjustment': 'Original practical durations retained. Every batch reserves a separate laboratory and teacher booking.',
+            'hours_adjustment': 'Original practical durations retained. Every batch reserves its own eligible room and teacher booking.',
             'classroom_practical_codes':config.settings.practical_classroom_codes,
             'project_policy':'Unsupervised Major Project reserves student time only; no teacher or room booking.'}
         identifier = storage.save_generation(payload.name.strip() or 'Timetable', current['revision'], config.model_dump(), result)
